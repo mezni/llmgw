@@ -65,14 +65,14 @@ Every project that calls an LLM re-implements the same things:
 ### 7.2 Providers and routing
 
 - Provider trait with adapters: OpenAI-compatible first, Anthropic second
-- Alias resolution per request, with a per-key model allowlist
+- Alias resolution per request, with a per-key alias allowlist
 - Retries with exponential backoff and jitter, honoring `Retry-After`
 - Fallback chains (applied only before the first streamed byte)
 - Per-route timeouts and a circuit breaker per provider
 
 ### 7.3 Auth, limits, and budgets
 
-- Virtual keys per project: create, rotate, revoke, expire
+- Virtual keys per project: create, revoke, expire (rotation in V2)
 - Rate limits per key (requests/min, tokens/min)
 - Monthly spend cap per project with hard cut-off
 - Separate admin authentication from data-plane keys
@@ -88,6 +88,7 @@ Every project that calls an LLM re-implements the same things:
 
 - CRUD for projects, keys, providers, aliases, pricing, and limits
 - Usage queries (totals and time series by project, model, day)
+- Audit log of admin mutations
 - Provider credentials encrypted at rest
 - OpenAPI specification
 
@@ -110,7 +111,7 @@ Every project that calls an LLM re-implements the same things:
 - Native `/v1/messages` (Anthropic format) endpoint
 - Embeddings endpoint
 - A/B and canary routing
-- Postgres support, audit log, key rotation workflows
+- Postgres support, key rotation workflows, rich audit-log views
 
 ## 8. Technical approach
 
@@ -123,7 +124,7 @@ Every project that calls an LLM re-implements the same things:
 | Storage | SQLite via sqlx (Postgres later) |
 | Config | TOML + environment overrides |
 | Observability | tracing, later OpenTelemetry |
-| Admin UI | Separate frontend against the admin API (or askama + HTMX) |
+| Admin UI | Vite + React + TypeScript SPA, API client generated from the OpenAPI spec, shadcn/ui + Tailwind; served by the admin listener |
 | Packaging | Docker, docker-compose, Caddy for TLS |
 
 ### Architecture
@@ -171,9 +172,9 @@ gateway/
 
 | Phase | Scope |
 |-------|-------|
-| MVP (M0–M4) | Workspace setup, passthrough to one provider, streaming, virtual keys, usage logging |
-| V1 (M5–M11) | Anthropic adapter, aliases and pricing, retries and fallbacks, rate limits and budgets, admin API, admin web app, hardening and packaging |
-| V2 | Caching, guardrails, metrics and tracing, key rotation, audit log |
+| MVP (M0–M5) | Workspace setup, passthrough to one provider, streaming, virtual keys, usage logging, Anthropic adapter |
+| V1 (M6–M11) | Aliases and pricing, retries and fallbacks, rate limits and budgets, admin API, admin web app, hardening and packaging |
+| V2 | Caching, guardrails, metrics and tracing, key rotation, audit-log views |
 | V3 | Semantic cache, A/B routing, `/v1/messages`, embeddings, Postgres |
 
 ## 11. Risks and open questions
@@ -184,7 +185,7 @@ gateway/
 | Mid-stream failures are hard to recover from | Fall back only before the first byte; surface clean stream errors |
 | Cost and token accounting differs per provider | Use provider-reported usage; store raw usage alongside the computed cost |
 | Scope creep from the V2/V3 list | Finish M11 before starting anything beyond V1 |
-| Admin UI stack undecided | Decide at M10: separate frontend vs. server-rendered HTMX |
+| Generated client drift from the Rust API | Regenerate the TypeScript client in CI and fail the build on drift; OpenAPI is a hard dependency for the UI sprint |
 | Sensitive prompts in logs | Default to metadata-only logging; make full logging opt-in per project |
 
 ## 12. Out-of-scope reminders

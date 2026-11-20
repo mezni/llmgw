@@ -14,7 +14,7 @@ flowchart LR
 
     subgraph Gateway
         DP[Data plane /v1/*]
-        AA[Admin API /admin/*]
+        AA[Admin API /admin/v1/*]
         UL[Async usage logger]
         DB[(SQLite)]
     end
@@ -64,7 +64,7 @@ gateway/
 │   ├── gateway/               # data plane: routes, middleware, routing engine
 │   ├── admin-api/             # control plane: routes, admin auth
 │   └── server/                # binary: config, wiring, startup, shutdown
-├── admin-ui/                  # web app
+├── admin-ui/                  # React admin UI (Vite + TS)
 ├── tests/                     # integration tests + mock provider
 └── docker/
 ```
@@ -163,7 +163,7 @@ sequenceDiagram
     M->>M: rate limit + budget check
     M->>R: parsed ChatRequest + Project
     R->>R: resolve alias → route (model + fallback chain)
-    R->>R: check key's model allowlist
+    R->>R: check key's alias allowlist
     R->>E: Route
     E->>P: chat / chat_stream (attempt 1)
     alt retryable failure before first byte
@@ -179,7 +179,7 @@ sequenceDiagram
 1. **Request ID:** generate or accept `X-Request-Id`, attach to the tracing span.
 2. **Tracing/metrics:** span per request with project, model, and status.
 3. **Body size limit:** reject oversized requests early.
-4. **Auth:** extract the bearer key, hash it, look it up (with a short-TTL in-memory cache), attach `AuthContext { project_id, key_id, limits, allowed_models }`.
+4. **Auth:** extract the bearer key, hash it, look it up (with a short-TTL in-memory cache), attach `AuthContext { project_id, key_id, limits, allowed_aliases }`.
 5. **Rate limiter:** token bucket per key; reject with 429 and `Retry-After`.
 6. **Budget check:** compare month-to-date spend (cached counter) with the project cap.
 7. **Handler:** parse, resolve, execute.
@@ -193,7 +193,7 @@ alias "smart" ──► Route {
     primary:   { provider: anthropic, model: "claude-…" },
     fallbacks: [ { provider: openai, model: "gpt-…" } ],
     timeout:   60s,
-    retries:   2,
+    max_attempts: 2,
 }
 ```
 
@@ -203,13 +203,13 @@ Resolution reads from an in-memory snapshot of the routing config, not the DB, o
 
 ```
 for target in [primary, ...fallbacks]:
-    for attempt in 1..=max_retries:
+    for attempt in 1..=max_attempts:
         result = provider.call(target)
         match result:
             Ok                          → return
             Err(retryable)              → sleep(backoff + jitter, or Retry-After); continue
             Err(non-retryable)          → return error immediately
-    // retries exhausted → next fallback target
+    // attempts exhausted → next fallback target
 return last error
 ```
 
@@ -249,7 +249,9 @@ flowchart LR
 - Handlers use `try_send`. If the channel is full, the event is dropped and a metric is incremented. Logging must never add latency or cause a request to fail.
 - The writer flushes in batches (for example every 100 events or 500 ms) in a single transaction.
 - On graceful shutdown, the server stops accepting requests, waits for in-flight streams, then drains the channel before exiting.
-- Spend counters per project (month-to-date) are kept in memory, rebuilt from the DB at startup, and updated by the writer, which keeps budget checks off the DB.
+- Spend counters per project (month-to-date) are kept in memory and rebuilt from the DB at startup, so budget checks never touch the DB.
+- A request's cost is added to the counter at completion (after a non-streaming response, or in the tap when a stream ends or is dropped) **before** the usage event is enqueued. The writer only persists rows; it does not own enforcement state, so a dropped log event can affect analytics but cannot bypass the budget.
+- Graceful shutdown drains the channel before exit, so persisted rows are current when counters are rebuilt on the next start. Reconcile counters against the DB periodically to catch drift.
 
 **Cost calculation:** `cost = input_tokens × input_price + output_tokens × output_price (+ cached-token pricing)`, using the pricing row in effect at request time. The price used is stored on the log row so later price edits don't rewrite history.
 
@@ -311,7 +313,7 @@ CREATE TABLE models (
 CREATE TABLE aliases (
   id              TEXT PRIMARY KEY,
   name            TEXT NOT NULL UNIQUE,      -- 'fast', 'smart'
-  max_retries     INTEGER NOT NULL DEFAULT 2,
+  max_attempts    INTEGER NOT NULL DEFAULT 2,
   timeout_ms      INTEGER
 );
 
@@ -369,12 +371,15 @@ CREATE TABLE audit_log (
 
 - **Keys:** generate 32+ random bytes, format as `gw-<base64url>`, show once, store only the SHA-256 hash and a display prefix. SHA-256 is sufficient for high-entropy secrets; use Argon2 for admin passwords.
 - **Provider credentials:** encrypted with a master key from the environment (for example AES-256-GCM via `aes-gcm`); the master key is never stored in the DB.
+- **Request log rows:** immutable history; `project_id` and `key_id` intentionally have no FK constraints so cleanup cannot cascade or block retention.
 - Run SQLite in WAL mode so the writer task and readers don't block each other.
 - Time series for the dashboard are computed from `requests` with `GROUP BY` on a time bucket; add rollup tables only if queries get slow.
 
-## 7. Control plane (admin API)
+## 7. HTTP surfaces
 
-Resource-oriented REST, JSON, versioned under `/admin/v1`:
+Data plane (port 8080): `POST /v1/chat/completions`, `GET /v1/models` (aliases visible to the caller), `GET /health`, `GET /ready`. Later versions add `POST /v1/messages` and `POST /v1/embeddings` (section 16).
+
+Control plane (admin API): resource-oriented REST, JSON, versioned under `/admin/v1`:
 
 | Resource | Operations |
 |----------|------------|
@@ -388,11 +393,17 @@ Resource-oriented REST, JSON, versioned under `/admin/v1`:
 | `/audit` | list admin actions |
 | `/auth/login`, `/auth/logout` | admin session |
 
-Admin auth: email and password, session cookie (HttpOnly, SameSite=Strict) or short-lived bearer token. A bootstrap admin is created from env vars on first start.
+Admin auth: email and password with a session cookie (HttpOnly, SameSite=Strict). The UI keeps no tokens in localStorage. A bootstrap admin is created from env vars on first start.
 
 Every mutating call writes an `audit_log` row.
 
-OpenAPI spec generated with `utoipa`; the admin UI can generate its client from it.
+OpenAPI spec generated with `utoipa`. The admin UI client is generated from it (`openapi-typescript` + `openapi-fetch`, or Orval); CI regenerates the client and fails the build on drift, so the OpenAPI task (5.11) is a hard dependency for the UI sprint.
+
+### Admin web app
+
+Vite + TypeScript SPA: TanStack Router (or React Router), TanStack Query for server state and cache invalidation, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts for the usage dashboard, TanStack Table for the request log. Tests: Vitest + React Testing Library, plus Playwright smoke flows.
+
+The built static files are served by the admin listener itself (for example `tower-http`'s `ServeDir`), so requests are same-origin with no CORS and the whole system ships in one container. In development, `vite dev` proxies `/admin` to port 8081. The UI is reachable only on the admin listener (8081), never on the public data-plane port.
 
 ## 8. Configuration and hot reload
 
@@ -415,7 +426,7 @@ Two layers:
 | Client keys | Hashed, revocable, expirable, per-project |
 | Plane separation | Admin API on a separate listener, bound to localhost or a private network by default |
 | Transport | TLS terminated by a reverse proxy (Caddy); gateway speaks HTTP behind it |
-| Logging | Default: metadata only. Full prompt/response logging is opt-in per project; redact the `Authorization` header always |
+| Logging | Modes: off, metadata, full; default metadata. Full prompt/response logging is opt-in per project; redact the `Authorization` header always |
 | Abuse | Body size limits, per-key rate limits, concurrency caps |
 | Admin | Argon2 password hashing, login throttling, audit log |
 | Errors | Never leak upstream credentials or internal details in error bodies |
@@ -444,9 +455,9 @@ Mid-stream failures are sent as a final `data:` SSE event containing an error ob
 ## 11. Observability
 
 - **Logs:** `tracing` with JSON output; every line carries `request_id`, project, alias.
-- **Metrics** (`/metrics`, Prometheus format), later: request count, latency histogram, TTFT histogram, tokens, cost, upstream errors by provider, retries, fallbacks, circuit-breaker state, dropped log events.
-- **Traces:** OpenTelemetry export, with a span per upstream attempt.
-- **Health:** `/health` (process alive), `/ready` (DB reachable, config loaded, at least one provider enabled).
+- **Metrics** (V2): `/metrics` in Prometheus format on the admin listener only, never on the public data-plane port. Request count, latency histogram, TTFT histogram, tokens, cost, upstream errors by provider, retries, fallbacks, circuit-breaker state, dropped log events.
+- **Traces** (V2): OpenTelemetry export, with a span per upstream attempt.
+- **Health:** `/health` (process alive) and `/ready` (DB reachable, config loaded, at least one provider enabled) on both listeners.
 
 ## 12. Concurrency and performance notes
 
@@ -465,6 +476,7 @@ Mid-stream failures are sent as a final `data:` SSE event containing an error ob
 | Integration | Full gateway against a mock provider (axum server) | Scenarios: success, slow, 429 with `Retry-After`, 500, mid-stream cut, malformed SSE |
 | Contract | OpenAI SDKs (Python/TS) against the gateway | Confirms real clients work, including streaming and errors |
 | Admin | Admin API CRUD, auth, audit trail | In-memory SQLite per test |
+| E2E | Admin UI smoke flows: login, project/key onboarding, dashboard | Playwright against the built app on port 8081 |
 | Load (later) | Concurrency, streaming under load, client disconnect storms | `oha` or `k6` against the mock provider |
 
 The mock provider is built in M1 and reused through every later milestone.
@@ -480,7 +492,7 @@ flowchart LR
     A --- D
 ```
 
-Single container image; SQLite database on a mounted volume; regular backups via `sqlite3 .backup` or Litestream.
+Single multi-stage container image: `vite build` produces the static assets and the Rust binary serves them on the admin listener; SQLite database on a mounted volume; regular backups via `sqlite3 .backup` or Litestream.
 
 `docker-compose` runs the gateway and Caddy; the admin port is not published publicly.
 
@@ -495,11 +507,13 @@ Graceful shutdown on SIGTERM: stop accepting connections, let in-flight streams 
 | OpenAI-compatible API as the client contract | Custom API | Works with existing SDKs and frameworks with no client code changes |
 | Separate data and control plane routers | One router | Different auth and traffic profiles; easy to split later |
 | SQLite first | Postgres | Zero-ops, ideal for learning and single-instance use; sqlx keeps a Postgres move feasible |
-| Async batched usage logging | Synchronous insert per request | Keeps logging off the hot path; accepts rare event loss under overload |
+| Async batched usage logging | Synchronous insert per request | Keeps logging off the hot path; accepts rare event loss under overload, with spend accounting on a separate path so budgets stay correct |
 | In-memory config snapshot with ArcSwap | Query the DB per request | Lock-free reads and consistent per-request view |
 | No retry after first streamed byte | Try to resume streams | Resuming is not generally possible; keeps semantics honest |
 | In-memory rate limiting | Redis | Sufficient for a single instance; avoids an extra dependency |
 | Provider passthrough via `extra` | Full normalization of every feature | Avoids a lowest-common-denominator API while keeping the core normalized |
+| React SPA served from the admin listener | Separate static hosting, or server-rendered HTMX | Same-origin requests, no CORS, one container; the admin API is the product surface |
+| Generated API client from OpenAPI | Hand-written TypeScript client | Types stay in sync with the Rust code; CI drift check makes 5.11 a hard dependency |
 
 ## 16. Extension points
 
@@ -507,5 +521,6 @@ Graceful shutdown on SIGTERM: stop accepting connections, let in-flight streams 
 - **New middleware (guardrails, caching):** add a tower layer between auth and the handler.
 - **Caching:** a layer keyed on a hash of the normalized request; bypass via header.
 - **Native `/v1/messages`:** a second route that translates Anthropic-format requests into `ChatRequest` and back.
+- **Embeddings:** extend `Provider` with `embed` and add `POST /v1/embeddings` with alias resolution and input-token pricing.
 - **Postgres:** swap the sqlx backend feature and adjust migrations; repositories hide the database from the rest of the code.
 - **Multi-instance:** move rate limiting and spend counters to a shared store such as Redis.
