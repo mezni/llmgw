@@ -11,6 +11,8 @@ use providers::mock::{router as mock_router, MockState};
 use providers::{AnthropicProvider, OpenAiProvider};
 use storage::UsageWriter;
 use tokio::net::TcpListener;
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -48,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     storage::migrate(&pool).await?;
     let (usage_log, receiver) = UsageLog::channel(USAGE_CHANNEL_CAPACITY);
     let writer = UsageWriter::new(pool.clone(), 100, Duration::from_millis(500));
-    let _writer_handle = writer.spawn(receiver);
+    let writer_handle = writer.spawn(receiver);
 
     let timeout = Duration::from_millis(config.default_timeout_ms);
     let openai = Arc::new(OpenAiProvider::new(base_url, api_key, timeout));
@@ -60,11 +62,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )) as Arc<_>
     });
     let providers = ProviderRegistry::new(openai, anthropic);
-    let app: Router = gateway::router(providers, usage_log, config.max_body_bytes, pool);
+    let app: Router = gateway::router(providers, usage_log.clone(), config.max_body_bytes, pool);
     let listener = TcpListener::bind(&config.data_listen).await?;
     tracing::info!(address = %config.data_listen, "data plane listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+    usage_log.close();
+    writer_handle.await?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install ctrl-c handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        signal(SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("shutdown signal received");
 }
 
 async fn key_cli(database_url: &str, args: &[String]) -> Result<(), Box<dyn std::error::Error>> {

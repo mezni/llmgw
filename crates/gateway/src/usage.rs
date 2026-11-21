@@ -1,4 +1,5 @@
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Instant;
 
@@ -16,12 +17,14 @@ pub const TAG_HEADER: &str = "x-gateway-tag";
 
 #[derive(Clone)]
 pub struct UsageLog {
-    sender: mpsc::Sender<UsageEvent>,
+    sender: Arc<Mutex<Option<mpsc::Sender<UsageEvent>>>>,
 }
 
 impl UsageLog {
     pub fn new(sender: mpsc::Sender<UsageEvent>) -> Self {
-        Self { sender }
+        Self {
+            sender: Arc::new(Mutex::new(Some(sender))),
+        }
     }
 
     pub fn channel(capacity: usize) -> (Self, mpsc::Receiver<UsageEvent>) {
@@ -30,9 +33,16 @@ impl UsageLog {
     }
 
     pub fn record(&self, event: UsageEvent) {
-        if let Err(error) = self.sender.try_send(event) {
-            warn!(error = %error, "usage event dropped");
+        let sender = self.sender.lock().expect("usage log mutex");
+        if let Some(sender) = sender.as_ref() {
+            if let Err(error) = sender.try_send(event) {
+                warn!(error = %error, "usage event dropped");
+            }
         }
+    }
+
+    pub fn close(&self) {
+        self.sender.lock().expect("usage log mutex").take();
     }
 }
 
@@ -220,6 +230,19 @@ mod tests {
         assert!(started.elapsed() < std::time::Duration::from_millis(50));
         assert!(receiver.try_recv().is_ok());
         assert!(receiver.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn close_releases_the_writer_channel() {
+        let (log, mut receiver) = UsageLog::channel(4);
+        log.record(context().event(UsageStatus::Ok, Some(200), None, None, None));
+        log.close();
+        log.record(context().event(UsageStatus::Ok, Some(200), None, None, None));
+        assert!(receiver.try_recv().is_ok());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::error::TryRecvError::Disconnected)
+        ));
     }
 
     #[tokio::test]
