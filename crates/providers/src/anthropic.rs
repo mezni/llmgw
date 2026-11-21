@@ -5,11 +5,13 @@ use futures_core::stream::BoxStream;
 use gateway_core::{
     ChatChunk, ChatRequest, ChatResponse, Choice, Message, OpenAiUsage, PromptTokensDetails, Role,
 };
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::{from_reqwest_error, parse_retry_after, Provider, ProviderError};
+use crate::{
+    classify_response_status, from_reqwest_error, parse_retry_after, Provider, ProviderError,
+};
 
 pub const DEFAULT_MAX_TOKENS: u32 = 1024;
 pub const DEFAULT_ANTHROPIC_VERSION: &str = "2023-06-01";
@@ -230,22 +232,7 @@ async fn classify_error(response: reqwest::Response) -> ProviderError {
     let status = response.status();
     let retry_after = parse_retry_after(response.headers());
     let body: Value = response.json().await.unwrap_or_else(|_| json!({}));
-
-    match status {
-        StatusCode::TOO_MANY_REQUESTS => ProviderError::RateLimited { retry_after },
-        StatusCode::BAD_REQUEST => ProviderError::BadRequest {
-            status: status.as_u16(),
-            body,
-        },
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => ProviderError::Auth,
-        status if status.is_server_error() => ProviderError::Upstream5xx {
-            status: status.as_u16(),
-        },
-        status => ProviderError::BadRequest {
-            status: status.as_u16(),
-            body,
-        },
-    }
+    classify_response_status(status, retry_after, body)
 }
 
 #[cfg(test)]

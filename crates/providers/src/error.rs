@@ -58,3 +58,72 @@ pub fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
         .and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_secs)
 }
+
+pub fn classify_response_status(
+    status: reqwest::StatusCode,
+    retry_after: Option<Duration>,
+    body: Value,
+) -> ProviderError {
+    match status {
+        reqwest::StatusCode::TOO_MANY_REQUESTS => ProviderError::RateLimited { retry_after },
+        reqwest::StatusCode::REQUEST_TIMEOUT => ProviderError::Timeout,
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => ProviderError::Auth,
+        status if status.is_server_error() => ProviderError::Upstream5xx {
+            status: status.as_u16(),
+        },
+        status => ProviderError::BadRequest {
+            status: status.as_u16(),
+            body,
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use reqwest::StatusCode;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn classifies_upstream_status_matrix() {
+        let body = json!({ "error": { "message": "upstream failed with key sk-hostile-fake" } });
+        assert!(matches!(
+            classify_response_status(StatusCode::BAD_REQUEST, None, body.clone()),
+            ProviderError::BadRequest { status: 400, .. }
+        ));
+        assert!(matches!(
+            classify_response_status(StatusCode::PAYLOAD_TOO_LARGE, None, body.clone()),
+            ProviderError::BadRequest { status: 413, .. }
+        ));
+        assert!(matches!(
+            classify_response_status(StatusCode::REQUEST_TIMEOUT, None, body.clone()),
+            ProviderError::Timeout
+        ));
+        assert!(matches!(
+            classify_response_status(StatusCode::TOO_MANY_REQUESTS, None, body.clone()),
+            ProviderError::RateLimited { .. }
+        ));
+        assert!(matches!(
+            classify_response_status(StatusCode::UNAUTHORIZED, None, body.clone()),
+            ProviderError::Auth
+        ));
+        assert!(matches!(
+            classify_response_status(StatusCode::FORBIDDEN, None, body.clone()),
+            ProviderError::Auth
+        ));
+        assert!(matches!(
+            classify_response_status(StatusCode::INTERNAL_SERVER_ERROR, None, body.clone()),
+            ProviderError::Upstream5xx { status: 500 }
+        ));
+    }
+
+    #[test]
+    fn retry_after_header_is_parsed_as_seconds() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, "2".parse().expect("header value"));
+        assert_eq!(parse_retry_after(&headers), Some(Duration::from_secs(2)));
+    }
+}
