@@ -4,6 +4,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
+use futures_util::StreamExt;
 use gateway::router;
 use providers::mock::{router as mock_router, MockState};
 use providers::OpenAiProvider;
@@ -11,12 +12,16 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 async fn spawn_gateway() -> axum::Router {
+    spawn_gateway_with_state().await.0
+}
+
+async fn spawn_gateway_with_state() -> (axum::Router, MockState) {
     let mock_state = MockState::default();
     let mock_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("mock listener");
     let mock_address = mock_listener.local_addr().expect("mock address");
-    let mock_app = mock_router(mock_state);
+    let mock_app = mock_router(mock_state.clone());
     tokio::spawn(async move {
         axum::serve(mock_listener, mock_app)
             .await
@@ -25,7 +30,7 @@ async fn spawn_gateway() -> axum::Router {
 
     let base_url = format!("http://{mock_address}/v1");
     let provider = OpenAiProvider::new(base_url, "test-key", Duration::from_secs(2));
-    router(Arc::new(provider), 1024 * 1024)
+    (router(Arc::new(provider), 1024 * 1024), mock_state)
 }
 
 async fn call(app: axum::Router, request: Request<Body>) -> Response {
@@ -37,6 +42,29 @@ fn chat_body() -> Value {
         "model": "fast",
         "messages": [{ "role": "user", "content": "Say hello." }]
     })
+}
+
+fn stream_body(scenario: &str) -> Value {
+    json!({
+        "model": "smart",
+        "messages": [{ "role": "user", "content": "Say hello." }],
+        "stream": true,
+        "x-mock-scenario": scenario
+    })
+}
+
+fn sse_events(body: &str) -> Vec<String> {
+    body.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(str::to_owned)
+        .collect()
+}
+
+async fn read_sse(response: Response) -> Vec<String> {
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body read");
+    sse_events(&String::from_utf8_lossy(&bytes))
 }
 
 #[tokio::test]
@@ -155,4 +183,122 @@ async fn maps_upstream_rate_limit() {
         .map(|bytes| serde_json::from_slice(&bytes).expect("json body"))
         .expect("body read");
     assert_eq!(body["error"]["type"], "rate_limit_error");
+}
+
+#[tokio::test]
+async fn streams_completion_as_openai_sse() {
+    let response = call(
+        spawn_gateway().await,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .header("x-request-id", "req-stream-1")
+            .body(Body::from(stream_body("stream_ok").to_string()))
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "text/event-stream"
+    );
+    assert_eq!(
+        response.headers().get("x-request-id").unwrap(),
+        "req-stream-1"
+    );
+
+    let events = read_sse(response).await;
+    assert_eq!(events.len(), 4);
+    assert_eq!(events[3], "[DONE]");
+
+    let first: Value = serde_json::from_str(&events[0]).expect("first chunk");
+    assert_eq!(first["id"], "req-stream-1");
+    assert_eq!(first["model"], "smart");
+    assert_eq!(first["object"], "chat.completion.chunk");
+    assert_eq!(first["choices"][0]["delta"]["content"], "He");
+
+    let final_chunk: Value = serde_json::from_str(&events[2]).expect("final chunk");
+    assert_eq!(final_chunk["choices"][0]["finish_reason"], "stop");
+    assert_eq!(final_chunk["usage"]["total_tokens"], 17);
+}
+
+#[tokio::test]
+async fn emits_error_event_without_done_on_cut_stream() {
+    let response = call(
+        spawn_gateway().await,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .body(Body::from(stream_body("stream_cut").to_string()))
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = read_sse(response).await;
+    assert_eq!(events.len(), 2);
+    let error: Value = serde_json::from_str(&events[1]).expect("error event");
+    assert_eq!(error["error"]["type"], "upstream_error");
+    assert!(!events.iter().any(|event| event == "[DONE]"));
+}
+
+#[tokio::test]
+async fn emits_error_event_on_malformed_stream() {
+    let response = call(
+        spawn_gateway().await,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .body(Body::from(stream_body("stream_malformed").to_string()))
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = read_sse(response).await;
+    assert_eq!(events.len(), 1);
+    let error: Value = serde_json::from_str(&events[0]).expect("error event");
+    assert_eq!(error["error"]["code"], "upstream_failed");
+    assert!(!events.iter().any(|event| event == "[DONE]"));
+}
+
+#[tokio::test]
+async fn client_disconnect_cancels_upstream_stream() {
+    let (app, mock_state) = spawn_gateway_with_state().await;
+    let response = call(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .body(Body::from(stream_body("client_cancel").to_string()))
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut frames = response.into_body().into_data_stream();
+    let first = frames
+        .next()
+        .await
+        .expect("first frame")
+        .expect("valid frame");
+    assert!(String::from_utf8_lossy(&first).contains("\"content\":\"He\""));
+    drop(frames);
+
+    let cancelled = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if mock_state.cancellations() > 0 {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("cancellation observed");
+    assert!(cancelled);
 }
