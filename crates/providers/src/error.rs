@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use reqwest::header::{HeaderMap, RETRY_AFTER};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -28,6 +29,18 @@ impl ProviderError {
             Self::RateLimited { .. } | Self::Upstream5xx { .. } | Self::Timeout | Self::Network(_)
         )
     }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::RateLimited { .. } => "rate_limited",
+            Self::Upstream5xx { .. } => "upstream_5xx",
+            Self::Timeout => "timeout",
+            Self::Network(_) => "network",
+            Self::BadRequest { .. } => "bad_request",
+            Self::Auth => "auth",
+            Self::Stream(_) => "stream",
+        }
+    }
 }
 
 pub fn from_reqwest_error(error: reqwest::Error) -> ProviderError {
@@ -36,4 +49,12 @@ pub fn from_reqwest_error(error: reqwest::Error) -> ProviderError {
     } else {
         ProviderError::Network(error)
     }
+}
+
+pub fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
+    headers
+        .get(RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
 }

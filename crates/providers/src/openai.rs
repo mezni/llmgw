@@ -6,12 +6,11 @@ use axum::body::Bytes;
 use futures_core::stream::BoxStream;
 use futures_util::{Stream, StreamExt};
 use gateway_core::{ChatChunk, ChatRequest, ChatResponse, OpenAiStreamChunk};
-use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 
 use crate::sse::{SseDecoder, SseEvent};
-use crate::{from_reqwest_error, Provider, ProviderError};
+use crate::{from_reqwest_error, parse_retry_after, Provider, ProviderError};
 
 pub struct OpenAiProvider {
     client: Client,
@@ -200,14 +199,6 @@ async fn classify_error(response: reqwest::Response) -> ProviderError {
             body,
         },
     }
-}
-
-fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
-    headers
-        .get(RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(Duration::from_secs)
 }
 
 #[cfg(test)]

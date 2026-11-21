@@ -5,8 +5,10 @@ use std::time::Duration;
 
 use axum::Router;
 use config::Config;
+use gateway::{UsageLog, USAGE_CHANNEL_CAPACITY};
 use providers::mock::{router as mock_router, MockState};
 use providers::OpenAiProvider;
+use storage::UsageWriter;
 use tokio::net::TcpListener;
 
 #[tokio::main]
@@ -33,12 +35,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "gateway starting"
     );
 
+    let pool = storage::connect(&config.database_url).await?;
+    storage::migrate(&pool).await?;
+    let (usage_log, receiver) = UsageLog::channel(USAGE_CHANNEL_CAPACITY);
+    let writer = UsageWriter::new(pool, 100, Duration::from_millis(500));
+    let _writer_handle = writer.spawn(receiver);
+
     let provider = OpenAiProvider::new(
         base_url,
         api_key,
         Duration::from_millis(config.default_timeout_ms),
     );
-    let app: Router = gateway::router(Arc::new(provider), config.max_body_bytes);
+    let app: Router = gateway::router(Arc::new(provider), usage_log, config.max_body_bytes);
     let listener = TcpListener::bind(&config.data_listen).await?;
     tracing::info!(address = %config.data_listen, "data plane listening");
     axum::serve(listener, app).await?;

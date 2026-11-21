@@ -2,38 +2,78 @@ use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Extension, State};
+use axum::http::HeaderMap;
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use futures_util::stream::{self, Stream};
 use futures_util::StreamExt;
-use gateway_core::{validate_request, ChatChunk, ChatRequest, OpenAiStreamChunk, StreamChoice};
+use gateway_core::{
+    validate_request, ChatChunk, ChatRequest, OpenAiStreamChunk, StreamChoice, Usage, UsageStatus,
+};
 use providers::ProviderError;
 use serde_json::json;
 
 use crate::error::{map_provider_error, ApiErrorResponse};
 use crate::request_id::RequestId;
 use crate::router::AppState;
+use crate::usage::{tap_stream, RequestUsage, TAG_HEADER};
 
 pub async fn handler(
     State(state): State<AppState>,
     Extension(request_id): Extension<RequestId>,
+    headers: HeaderMap,
     Json(request): Json<ChatRequest>,
 ) -> Result<Response, ApiErrorResponse> {
-    validate_request(&request)?;
-
     let alias = request.model.clone();
-    if request.stream {
-        return stream_response(&state, request_id.0, alias, request).await;
+    let tag = headers
+        .get(TAG_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let context = RequestUsage::new(
+        request_id.0.clone(),
+        alias.clone(),
+        tag,
+        state.provider.id(),
+        alias.clone(),
+        request.stream,
+    );
+
+    if let Err(error) = validate_request(&request) {
+        state.usage.record(context.event(
+            UsageStatus::Error,
+            Some(error.status),
+            Some(error.error.code),
+            None,
+            None,
+        ));
+        return Err(error.into());
     }
 
-    let mut response = state
-        .provider
-        .chat(request)
-        .await
-        .map_err(map_provider_error)?;
+    if request.stream {
+        return stream_response(&state, request_id.0, alias, context, request).await;
+    }
+
+    let mut response = match state.provider.chat(request).await {
+        Ok(response) => response,
+        Err(error) => {
+            let api_error = map_provider_error(error);
+            state.usage.record(context.event(
+                UsageStatus::Error,
+                Some(api_error.status),
+                Some(api_error.error.code),
+                None,
+                None,
+            ));
+            return Err(api_error.into());
+        }
+    };
     response.id = request_id.0;
     response.model = alias;
+    let usage = Some(Usage::from(&response.usage));
+    state
+        .usage
+        .record(context.event(UsageStatus::Ok, Some(200), None, usage, None));
     Ok(Json(response).into_response())
 }
 
@@ -41,18 +81,29 @@ async fn stream_response(
     state: &AppState,
     id: String,
     model: String,
+    context: RequestUsage,
     request: ChatRequest,
 ) -> Result<Response, ApiErrorResponse> {
-    let provider_stream = state
-        .provider
-        .chat_stream(request)
-        .await
-        .map_err(map_provider_error)?;
+    let provider_stream = match state.provider.chat_stream(request).await {
+        Ok(stream) => stream,
+        Err(error) => {
+            let api_error = map_provider_error(error);
+            state.usage.record(context.event(
+                UsageStatus::Error,
+                Some(api_error.status),
+                Some(api_error.error.code),
+                None,
+                None,
+            ));
+            return Err(api_error.into());
+        }
+    };
     let created = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs())
         .unwrap_or(0);
-    Ok(Sse::new(sse_events(provider_stream, id, model, created)).into_response())
+    let tapped = tap_stream(provider_stream, context, state.usage.clone());
+    Ok(Sse::new(sse_events(tapped, id, model, created)).into_response())
 }
 
 fn sse_events<S>(

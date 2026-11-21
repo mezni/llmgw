@@ -5,17 +5,20 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
 use futures_util::StreamExt;
-use gateway::router;
+use gateway::{router, UsageLog};
+use gateway_core::{UsageEvent, UsageStatus};
 use providers::mock::{router as mock_router, MockState};
 use providers::OpenAiProvider;
 use serde_json::{json, Value};
+use tokio::sync::mpsc;
 use tower::ServiceExt;
 
 async fn spawn_gateway() -> axum::Router {
-    spawn_gateway_with_state().await.0
+    let (app, _, _) = spawn_gateway_with_usage().await;
+    app
 }
 
-async fn spawn_gateway_with_state() -> (axum::Router, MockState) {
+async fn spawn_gateway_with_usage() -> (axum::Router, MockState, mpsc::Receiver<UsageEvent>) {
     let mock_state = MockState::default();
     let mock_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -30,7 +33,12 @@ async fn spawn_gateway_with_state() -> (axum::Router, MockState) {
 
     let base_url = format!("http://{mock_address}/v1");
     let provider = OpenAiProvider::new(base_url, "test-key", Duration::from_secs(2));
-    (router(Arc::new(provider), 1024 * 1024), mock_state)
+    let (usage, receiver) = UsageLog::channel(16);
+    (
+        router(Arc::new(provider), usage, 1024 * 1024),
+        mock_state,
+        receiver,
+    )
 }
 
 async fn call(app: axum::Router, request: Request<Body>) -> Response {
@@ -268,7 +276,7 @@ async fn emits_error_event_on_malformed_stream() {
 
 #[tokio::test]
 async fn client_disconnect_cancels_upstream_stream() {
-    let (app, mock_state) = spawn_gateway_with_state().await;
+    let (app, mock_state, mut usage_events) = spawn_gateway_with_usage().await;
     let response = call(
         app,
         Request::builder()
@@ -301,4 +309,63 @@ async fn client_disconnect_cancels_upstream_stream() {
     .await
     .expect("cancellation observed");
     assert!(cancelled);
+
+    let event = usage_events.try_recv().expect("cancellation usage event");
+    assert_eq!(event.status, UsageStatus::ClientCancelled);
+    assert_eq!(event.alias, "smart");
+    assert!(event.ttft_ms.is_some());
+}
+
+#[tokio::test]
+async fn logs_non_streaming_usage() {
+    let (app, _, mut usage_events) = spawn_gateway_with_usage().await;
+    let response = call(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .header("x-gateway-tag", "smoke")
+            .header("x-request-id", "req-usage-1")
+            .body(Body::from(chat_body().to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let event = usage_events.try_recv().expect("usage event");
+    assert_eq!(event.id, "req-usage-1");
+    assert_eq!(event.alias, "fast");
+    assert_eq!(event.tag.as_deref(), Some("smoke"));
+    assert_eq!(event.provider_id.as_deref(), Some("openai"));
+    assert_eq!(event.input_tokens, Some(12));
+    assert_eq!(event.output_tokens, Some(5));
+    assert_eq!(event.status, UsageStatus::Ok);
+    assert!(event.latency_ms.is_some());
+}
+
+#[tokio::test]
+async fn logs_stream_usage_and_ttft() {
+    let (app, _, mut usage_events) = spawn_gateway_with_usage().await;
+    let response = call(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .header("x-request-id", "req-stream-usage")
+            .body(Body::from(stream_body("stream_ok").to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(read_sse(response).await.len(), 4);
+
+    let event = usage_events.try_recv().expect("stream usage event");
+    assert_eq!(event.id, "req-stream-usage");
+    assert!(event.stream);
+    assert_eq!(event.input_tokens, Some(12));
+    assert_eq!(event.output_tokens, Some(5));
+    assert!(event.ttft_ms.is_some());
+    assert_eq!(event.status, UsageStatus::Ok);
 }
