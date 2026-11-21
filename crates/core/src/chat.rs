@@ -142,6 +142,85 @@ impl From<&OpenAiUsage> for Usage {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FinishReason {
+    Stop,
+    Length,
+    ToolCalls,
+    ContentFilter,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Delta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<Role>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCallDelta>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolCallDelta {
+    pub index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub call_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<FunctionCallDelta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FunctionCallDelta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub arguments: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChatChunk {
+    pub delta: Delta,
+    pub finish_reason: Option<FinishReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OpenAiStreamChunk {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<StreamChoice>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<OpenAiUsage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StreamChoice {
+    pub index: u32,
+    pub delta: Delta,
+    pub finish_reason: Option<FinishReason>,
+}
+
+impl From<OpenAiStreamChunk> for ChatChunk {
+    fn from(value: OpenAiStreamChunk) -> Self {
+        let usage = value.usage.as_ref().map(Usage::from);
+        let choice = value.choices.into_iter().next();
+        Self {
+            delta: choice
+                .as_ref()
+                .map(|choice| choice.delta.clone())
+                .unwrap_or_default(),
+            finish_reason: choice.and_then(|choice| choice.finish_reason),
+            usage,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +229,8 @@ mod tests {
         include_str!("../../../tests/fixtures/providers/openai/chat-request.json");
     const RESPONSE_FIXTURE: &str =
         include_str!("../../../tests/fixtures/providers/openai/chat-response.json");
+    const CHUNKS_FIXTURE: &str =
+        include_str!("../../../tests/fixtures/providers/openai/chat-chunks.json");
 
     #[test]
     fn round_trips_openai_request_fixture() {
@@ -178,5 +259,34 @@ mod tests {
     fn rejects_multimodal_content() {
         let json = r#"{"model":"fast","messages":[{"role":"user","content":[{"type":"text","text":"hi"}]}]}"#;
         assert!(serde_json::from_str::<ChatRequest>(json).is_err());
+    }
+
+    #[test]
+    fn converts_openai_stream_chunks_to_normalized_chunks() {
+        let chunks: Vec<OpenAiStreamChunk> =
+            serde_json::from_str(CHUNKS_FIXTURE).expect("valid chunk fixture");
+        let normalized: Vec<ChatChunk> = chunks.into_iter().map(ChatChunk::from).collect();
+
+        assert_eq!(
+            normalized[0].delta,
+            Delta {
+                role: Some(Role::Assistant),
+                content: Some("He".to_owned()),
+                tool_calls: None,
+            }
+        );
+        assert_eq!(normalized[0].finish_reason, None);
+        assert_eq!(normalized[2].finish_reason, Some(FinishReason::Stop));
+        assert_eq!(normalized[2].usage.expect("usage").input_tokens, 12);
+    }
+
+    #[test]
+    fn round_trips_openai_stream_chunk() {
+        let chunks: Vec<OpenAiStreamChunk> =
+            serde_json::from_str(CHUNKS_FIXTURE).expect("valid chunk fixture");
+        let chunk = chunks.into_iter().next().expect("first chunk");
+        let encoded = serde_json::to_string(&chunk).expect("serializable");
+        let decoded: OpenAiStreamChunk = serde_json::from_str(&encoded).expect("round trip");
+        assert_eq!(chunk, decoded);
     }
 }
