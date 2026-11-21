@@ -24,13 +24,15 @@ Precedence is **environment → TOML → built-in default**. Secrets are never w
 | `GATEWAY_MAX_BODY_BYTES` | `1048576` | Request body limit (1 MiB) | Yes |
 | `GATEWAY_UPSTREAM_BASE_URL` | unset | OpenAI-compatible upstream base URL; when unset, S1 starts an in-process mock provider | Yes |
 | `GATEWAY_UPSTREAM_API_KEY` | unset | Credential sent to that upstream; not needed for the mock | Yes |
+| `GATEWAY_ANTHROPIC_BASE_URL` | `https://api.anthropic.com/v1` | Anthropic Messages API base URL; used only when an API key is set | Yes |
+| `GATEWAY_ANTHROPIC_API_KEY` | unset | Anthropic credential; model names beginning with `claude` route to Anthropic when set | Yes |
 | `GATEWAY_LOG_RETENTION_DAYS` | `90` | `requests` metadata retention | Yes (job rereads on next tick) |
 | `GATEWAY_BODY_RETENTION_DAYS` | `7` | `request_body` / `response_body` retention in full mode | Yes (job rereads on next tick) |
 | `GATEWAY_AUDIT_RETENTION_DAYS` | `365` | `audit_log` retention | Yes (job rereads on next tick) |
 | `GATEWAY_METRICS_ENABLED` | `false` | V2: expose `/metrics` on the admin listener | Yes |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | V2: OTLP trace exporter endpoint; unset disables export | Yes |
 
-Any unknown `GATEWAY_*` variable is ignored with a startup warning so a typo does not silently change behavior.
+Any unknown `GATEWAY_*` variable is ignored with a startup warning so a typo does not silently change behavior. Anthropic selection is temporary: with an API key set, requests for models whose name begins with `claude` use `GATEWAY_ANTHROPIC_BASE_URL`; all other requests use the OpenAI-compatible provider. Aliases replace this selector in S4.
 
 ## 2. TOML settings
 

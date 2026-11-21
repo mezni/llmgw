@@ -5,9 +5,9 @@ use std::time::Duration;
 
 use axum::Router;
 use config::Config;
-use gateway::{UsageLog, USAGE_CHANNEL_CAPACITY};
+use gateway::{ProviderRegistry, UsageLog, USAGE_CHANNEL_CAPACITY};
 use providers::mock::{router as mock_router, MockState};
-use providers::OpenAiProvider;
+use providers::{AnthropicProvider, OpenAiProvider};
 use storage::UsageWriter;
 use tokio::net::TcpListener;
 
@@ -41,12 +41,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let writer = UsageWriter::new(pool, 100, Duration::from_millis(500));
     let _writer_handle = writer.spawn(receiver);
 
-    let provider = OpenAiProvider::new(
-        base_url,
-        api_key,
-        Duration::from_millis(config.default_timeout_ms),
-    );
-    let app: Router = gateway::router(Arc::new(provider), usage_log, config.max_body_bytes);
+    let timeout = Duration::from_millis(config.default_timeout_ms);
+    let openai = Arc::new(OpenAiProvider::new(base_url, api_key, timeout));
+    let anthropic = config.anthropic_api_key.clone().map(|key| {
+        Arc::new(AnthropicProvider::new(
+            config.anthropic_base_url.clone(),
+            key,
+            timeout,
+        )) as Arc<_>
+    });
+    let providers = ProviderRegistry::new(openai, anthropic);
+    let app: Router = gateway::router(providers, usage_log, config.max_body_bytes);
     let listener = TcpListener::bind(&config.data_listen).await?;
     tracing::info!(address = %config.data_listen, "data plane listening");
     axum::serve(listener, app).await?;

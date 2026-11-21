@@ -1,4 +1,5 @@
 use std::convert::Infallible;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::{Extension, State};
@@ -11,7 +12,7 @@ use futures_util::StreamExt;
 use gateway_core::{
     validate_request, ChatChunk, ChatRequest, OpenAiStreamChunk, StreamChoice, Usage, UsageStatus,
 };
-use providers::ProviderError;
+use providers::{Provider, ProviderError};
 use serde_json::json;
 
 use crate::error::{map_provider_error, ApiErrorResponse};
@@ -26,6 +27,7 @@ pub async fn handler(
     Json(request): Json<ChatRequest>,
 ) -> Result<Response, ApiErrorResponse> {
     let alias = request.model.clone();
+    let provider = state.providers.resolve(&alias);
     let tag = headers
         .get(TAG_HEADER)
         .and_then(|value| value.to_str().ok())
@@ -34,7 +36,7 @@ pub async fn handler(
         request_id.0.clone(),
         alias.clone(),
         tag,
-        state.provider.id(),
+        provider.id().to_owned(),
         alias.clone(),
         request.stream,
     );
@@ -51,10 +53,10 @@ pub async fn handler(
     }
 
     if request.stream {
-        return stream_response(&state, request_id.0, alias, context, request).await;
+        return stream_response(&state, provider, request_id.0, alias, context, request).await;
     }
 
-    let mut response = match state.provider.chat(request).await {
+    let mut response = match provider.chat(request).await {
         Ok(response) => response,
         Err(error) => {
             let api_error = map_provider_error(error);
@@ -79,12 +81,13 @@ pub async fn handler(
 
 async fn stream_response(
     state: &AppState,
+    provider: Arc<dyn Provider>,
     id: String,
     model: String,
     context: RequestUsage,
     request: ChatRequest,
 ) -> Result<Response, ApiErrorResponse> {
-    let provider_stream = match state.provider.chat_stream(request).await {
+    let provider_stream = match provider.chat_stream(request).await {
         Ok(stream) => stream,
         Err(error) => {
             let api_error = map_provider_error(error);

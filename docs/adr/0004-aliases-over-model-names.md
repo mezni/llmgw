@@ -24,4 +24,5 @@ Expose stable aliases such as `fast` and `smart` as the client-facing model fiel
 - The request path gains one lock-free snapshot lookup, which is acceptable and keeps DB traffic off the hot path.
 - Unknown aliases return 404 and aliases not permitted for a key return 403, so mistakes are explicit.
 - The allowlist is per alias, not per upstream model; clients never see provider-specific names.
+- S3 uses a temporary model-name selector (`claude*` → Anthropic, everything else → the OpenAI-compatible provider) so the second provider can be demonstrated before aliases land in S4.
 - V3 routing policies (weights, rules, canaries) build on the same alias abstraction.

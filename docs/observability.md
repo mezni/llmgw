@@ -24,7 +24,7 @@ Log fields, metric names, dashboards, and alerts. The short design is in [archit
 | `span_id`, `trace_id` | string | 0.3.0+ | OpenTelemetry correlation |
 | `guardrail_action`, `rule_id` | string | 0.3.0+ | Decision only, never matched content |
 
-`request_body` / `response_body` appear only in `full` mode and are pruned after 7 days. `Authorization`, provider credentials, master keys, admin passwords, session cookies, prompt content in metadata mode, and raw upstream error bodies are never logged.
+`request_body` / `response_body` appear only in `full` mode and are pruned after 7 days. `Authorization`, provider credentials, master keys, admin passwords, session cookies, prompt content in metadata mode, and raw upstream error bodies are never logged. At the S3 checkpoint, usage metadata, TTFT, and tags are persisted; `cost_usd` and `attempts` remain null until pricing and retry layers land.
 
 ## 2. Metrics
 

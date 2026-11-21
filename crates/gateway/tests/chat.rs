@@ -5,10 +5,10 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::response::Response;
 use futures_util::StreamExt;
-use gateway::{router, UsageLog};
+use gateway::{router, ProviderRegistry, UsageLog};
 use gateway_core::{UsageEvent, UsageStatus};
 use providers::mock::{router as mock_router, MockState};
-use providers::OpenAiProvider;
+use providers::{AnthropicProvider, OpenAiProvider};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tower::ServiceExt;
@@ -32,10 +32,20 @@ async fn spawn_gateway_with_usage() -> (axum::Router, MockState, mpsc::Receiver<
     });
 
     let base_url = format!("http://{mock_address}/v1");
-    let provider = OpenAiProvider::new(base_url, "test-key", Duration::from_secs(2));
+    let timeout = Duration::from_secs(2);
+    let openai = Arc::new(OpenAiProvider::new(base_url.clone(), "test-key", timeout));
+    let anthropic = Arc::new(AnthropicProvider::new(
+        base_url,
+        "test-anthropic-key",
+        timeout,
+    ));
     let (usage, receiver) = UsageLog::channel(16);
     (
-        router(Arc::new(provider), usage, 1024 * 1024),
+        router(
+            ProviderRegistry::new(openai, Some(anthropic)),
+            usage,
+            1024 * 1024,
+        ),
         mock_state,
         receiver,
     )
@@ -367,5 +377,47 @@ async fn logs_stream_usage_and_ttft() {
     assert_eq!(event.input_tokens, Some(12));
     assert_eq!(event.output_tokens, Some(5));
     assert!(event.ttft_ms.is_some());
+    assert_eq!(event.status, UsageStatus::Ok);
+}
+
+#[tokio::test]
+async fn routes_claude_models_to_anthropic() {
+    let (app, mock_state, mut usage_events) = spawn_gateway_with_usage().await;
+    let body = json!({
+        "model": "claude-3-5-sonnet-latest",
+        "messages": [
+            { "role": "system", "content": "Be brief." },
+            { "role": "user", "content": "Say hello." }
+        ]
+    });
+    let response = call(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .header("x-request-id", "req-anthropic")
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body read");
+    let response_body: Value = serde_json::from_slice(&bytes).expect("response json");
+    assert_eq!(
+        response_body["choices"][0]["message"]["content"],
+        "echo: Say hello."
+    );
+
+    let requests = mock_state.recorded();
+    assert_eq!(requests[0]["system"], "Be brief.");
+    assert_eq!(requests[0]["max_tokens"], 1024);
+
+    let event = usage_events.try_recv().expect("anthropic usage event");
+    assert_eq!(event.provider_id.as_deref(), Some("anthropic"));
+    assert_eq!(event.alias, "claude-3-5-sonnet-latest");
     assert_eq!(event.status, UsageStatus::Ok);
 }

@@ -47,7 +47,7 @@ Each scenario records the upstream request it received so tests can assert heade
 ## 3. Fixtures
 
 - `tests/fixtures/providers/openai/` — non-streaming, streamed, tool, error, and usage payloads from real OpenAI-compatible responses with all identifiers scrubbed.
-- `tests/fixtures/providers/anthropic/` — `message_start`/`content_block_*`/`message_delta` sequences, tool blocks, cache-token usage, and error bodies.
+- `crates/providers/tests/fixtures/providers/anthropic/` — non-streaming `messages` responses with cache-token usage; streaming event sequences, tool blocks, and error bodies are added with those features.
 - `tests/fixtures/sdk/` — golden responses the Python and TypeScript SDKs must accept, including streaming errors.
 - `tests/fixtures/admin/` — representative OpenAPI responses for each resource; also used by MSW in UI component tests.
 - `tests/fixtures/db/` — schema snapshot from a fresh migration run and a small seeded dataset used by dashboard queries.

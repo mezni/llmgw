@@ -177,8 +177,7 @@ mod tests {
     async fn flushes_on_interval_and_on_channel_close() {
         let (pool, path) = fresh_pool().await;
         let (sender, receiver) = mpsc::channel(4);
-        let handle =
-            UsageWriter::new(pool.clone(), 100, Duration::from_millis(20)).spawn(receiver);
+        let handle = UsageWriter::new(pool.clone(), 100, Duration::from_millis(20)).spawn(receiver);
 
         sender.send(event("tick")).await.expect("send");
         tokio::time::timeout(Duration::from_secs(2), async {

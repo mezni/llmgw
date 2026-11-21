@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header::RETRY_AFTER, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -66,6 +66,7 @@ impl Drop for StreamGuard {
 pub fn router(state: MockState) -> Router {
     Router::new()
         .route("/v1/chat/completions", post(chat))
+        .route("/v1/messages", post(anthropic_messages))
         .route("/__mock/requests", get(recorded))
         .route("/__mock/cancellations", get(cancellations))
         .with_state(state)
@@ -134,6 +135,76 @@ async fn chat(
             stream_response(&scenario, state)
         }
         _ => success(&request),
+    }
+}
+
+async fn anthropic_messages(
+    State(state): State<MockState>,
+    headers: HeaderMap,
+    Json(request): Json<Value>,
+) -> Response {
+    state.record(&request);
+    let scenario = headers
+        .get("x-mock-scenario")
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| request.get("x-mock-scenario").and_then(Value::as_str))
+        .unwrap_or("ok");
+
+    match scenario {
+        "rate_limited" => {
+            let mut response_headers = HeaderMap::new();
+            response_headers.insert(RETRY_AFTER, HeaderValue::from_static("1"));
+            (
+                StatusCode::TOO_MANY_REQUESTS,
+                response_headers,
+                Json(json!({
+                    "type": "error",
+                    "error": {
+                        "type": "rate_limit_error",
+                        "message": "slow down with key sk-hostile-fake"
+                    }
+                })),
+            )
+                .into_response()
+        }
+        "auth_error" => (
+            StatusCode::UNAUTHORIZED,
+            Json(json!({
+                "type": "error",
+                "error": { "type": "authentication_error", "message": "invalid key" }
+            })),
+        )
+            .into_response(),
+        _ => {
+            let content = request
+                .get("messages")
+                .and_then(Value::as_array)
+                .and_then(|messages| messages.last())
+                .and_then(|message| message.get("content"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let model = request
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or("claude-test-1");
+            (
+                StatusCode::OK,
+                Json(json!({
+                    "id": "msg_mock_001",
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{ "type": "text", "text": format!("echo: {content}") }],
+                    "model": model,
+                    "stop_reason": "end_turn",
+                    "usage": {
+                        "input_tokens": 12,
+                        "output_tokens": 5,
+                        "cache_read_input_tokens": 3
+                    }
+                })),
+            )
+                .into_response()
+        }
     }
 }
 

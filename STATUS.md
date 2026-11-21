@@ -3,25 +3,25 @@
 ## Current sprint: S3 — Usage logging and second provider (MVP, 0.1.0 checkpoint)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
 - Started / updated: 2026-11-20
-- State: in progress
+- State: complete
 
 Committed scope: 18 pts (3.1, 3.2, 3.3, 3.4, 3.6, 3.9). The S3 table lists 29 pts and S2 spilled 10 more; 18 is the smallest set that delivers the MVP demo (usage in SQL, TTFT for streams, and two providers behind `/v1/chat/completions`) at approximately the 16-point capacity. Cuts follow sprint-planning.md §5: 3.8 (tool-call mapping) first, then 3.7 (Anthropic streaming translation) and 3.5 (graceful shutdown) for capacity. The S2 auth slice (2.6–2.9), including key hashing, is deferred again with the user's explicit approval of that Never-cut deviation. No control-plane change, so no OpenAPI/client regeneration. This is the 0.1.0 version checkpoint.
 
 ### Task plan
 | Id | Task | Pts | State | Evidence |
 |----|------|-----|-------|----------|
-| 3.1 | `requests` table and indexes | 2 | planned | migration applies; schema matches data-model.md §2/§3 |
-| 3.2 | `UsageEvent` type and bounded mpsc channel with `try_send` | 2 | planned | unit test proves handlers never block when full |
-| 3.3 | Background batch writer (N events or T ms per transaction) | 3 | planned | writer test shows rows after flush; failures logged only |
-| 3.4 | Stream tap: TTFT, final usage, emits on end or drop | 5 | planned | stream tests cover ok, usage-only final chunk, and `client_cancelled` |
-| 3.6 | Anthropic adapter: request mapping (system prompt, required `max_tokens`, roles) | 5 | planned | fixture/mock tests for non-streaming call and field mapping |
-| 3.9 | Provider selection by model name (temporary, replaced by aliases in S4) | 1 | planned | Claude models route to Anthropic; OpenAI models stay on OpenAI |
+| 3.1 | `requests` table and indexes | 2 | done | `0001_init.sql`; fresh migration + `.schema requests` assertion |
+| 3.2 | `UsageEvent` type and bounded mpsc channel with `try_send` | 2 | done | `full_channel_record_does_not_block`; metadata-only event test |
+| 3.3 | Background batch writer (N events or T ms per transaction) | 3 | done | `flushes_when_batch_is_full`; `flushes_on_interval_and_on_channel_close` |
+| 3.4 | Stream tap: TTFT, final usage, emits on end or drop | 5 | done | usage tap unit tests + `logs_stream_usage_and_ttft`; cancellation test |
+| 3.6 | Anthropic adapter: request mapping (system prompt, required `max_tokens`, roles) | 5 | done | 4 adapter tests + `routes_claude_models_to_anthropic`; fixture added |
+| 3.9 | Provider selection by model name (temporary, replaced by aliases in S4) | 1 | done | `resolves_claude_models_to_anthropic`; `routes_claude_models_to_anthropic` |
 
 ### Detailed task cards
 
 #### 3.1 — `requests` table and indexes
 - Acceptance (verbatim): "Migration applied; schema matches the architecture doc."
-- Depends on: S1 (1.1), S2 streaming (2.1–2.5). Files: `crates/storage/migrations/V0001__init.sql`, `crates/storage/src/**`, `docs/data-model.md`.
+- Depends on: S1 (1.1), S2 streaming (2.1–2.5). Files: `crates/storage/migrations/0001_init.sql`, `crates/storage/src/**`, `docs/data-model.md`.
 - Tests: fresh `sqlx migrate run`; schema assertion for `requests` columns and indexes from data-model.md §2/§3.
 - Docs: data-model.md §2/§4 notes the initial migration subset.
 
@@ -58,23 +58,24 @@ Committed scope: 18 pts (3.1, 3.2, 3.3, 3.4, 3.6, 3.9). The S3 table lists 29 pt
 ### Verification
 | Check | Command | Result |
 |-------|---------|--------|
-| Format | `cargo fmt --all -- --check` | pending |
-| Lint | `cargo clippy --offline --all-targets -- -D warnings` | pending |
-| Rust tests | `cargo test --offline` | pending |
-| Build | `cargo build --offline` | pending |
+| Format | `cargo fmt --all -- --check` | pass |
+| Lint | `cargo clippy --offline --all-targets -- -D warnings` | pass |
+| Rust tests | `cargo test --offline` | pass — 52 tests (12 gateway integration, 6 gateway unit, 10 core, 16 provider, 5 config, 3 storage) |
+| Build | `cargo build --offline` | pass |
 | Frontend | `npm run typecheck && npm run lint && npm test` | not applicable — no UI changes |
-| OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pending |
-| Migration | fresh `sqlx migrate run` against a temp DB + schema check | pending |
+| OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pass (exit 0) |
+| Migration | fresh `sqlx migrate run` against a temp DB + schema check | pass — `1/migrate init`; `requests` columns and 4 indexes verified |
 | E2E | `npm run e2e` | not applicable — S6 onward |
-| SDK contract | OpenAI Python SDK smoke | pending |
-| Security | secret-pattern scan | pending |
+| SDK contract | OpenAI Python SDK 3.24.0 non-streaming + streaming smoke | pass — `echo: Hello` / `Hello` |
+| Security | secret-pattern scan | pass — no matches outside fixtures/mock/docs |
 
 ### Decisions and deviations
 - Sprints run directly on `main` (MASTER_PROMPT.md override); no feature branch.
 - Scope approved by the user: 3.1–3.4, 3.6, 3.9 (18 pts). Key hashing (2.7) is deferred a second time with explicit approval, a documented deviation from the "Never cut" rule; it remains mandatory when the auth slice lands.
 - Cut 3.8 first per sprint-planning.md §5; 3.7 and 3.5 cut for capacity, not removed from the backlog.
 - With no virtual keys yet, request-log rows use the documented local placeholders `local` / `local-key`; no client secret is stored.
-- Anthropic streaming translation (3.7) is deferred, so Anthropic-backed streaming requests return a clear unsupported error until S3's remaining scope or S4; provider-compatibility.md is updated to match.
+- Model selection is temporary: names beginning with `claude` route to Anthropic when `GATEWAY_ANTHROPIC_API_KEY` is set; ADR 0004 records the S4 alias replacement.
+- Anthropic streaming translation (3.7) is deferred, so Anthropic-backed streaming requests return `400 unsupported_field` until 3.7 lands; provider-compatibility.md is updated to match.
 - No control-plane change, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` remain unchanged.
 - 0.1.0 version checkpoint: convert `[Unreleased]` to a dated 0.1.0 release in CHANGELOG.md and start a new `[Unreleased]` section.
 
@@ -91,13 +92,13 @@ Committed scope: 18 pts (3.1, 3.2, 3.3, 3.4, 3.6, 3.9). The S3 table lists 29 pt
 - None.
 
 ### Definition of done
-- [ ] Acceptance criteria met for committed tasks
-- [ ] fmt, clippy, tests pass
-- [ ] Mock-provider scenarios covered; real-provider evidence recorded where relevant
-- [ ] Docs and CHANGELOG updated
-- [ ] No secrets in logs, fixtures, or repo
-- [ ] Generated client unchanged (no OpenAPI change)
-- [ ] Committed on main and pushed
+- [x] Acceptance criteria met for committed tasks
+- [x] fmt, clippy, tests pass
+- [x] Mock-provider scenarios covered; real-provider evidence recorded where relevant
+- [x] Docs and CHANGELOG updated
+- [x] No secrets in logs, fixtures, or repo
+- [x] Generated client unchanged (no OpenAPI change)
+- [x] Committed on main and pushed
 
 ## Sprint S2 — Streaming and auth (MVP)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
@@ -305,3 +306,4 @@ Committed scope: 18 pts (1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 1.8). The sprint table li
 |--------|---------|-------|--------------|-------|
 | S1 | MVP | complete | 0d38952 | Foundations: data plane vertical slice |
 | S2 | MVP | complete | 2c4daa8..41b12a8 | Streaming correctness; auth slice deferred to S3 |
+| S3 | MVP | complete | 2998432..HEAD | Usage logging, stream tap, Anthropic non-streaming, temporary model routing; 0.1.0 checkpoint |

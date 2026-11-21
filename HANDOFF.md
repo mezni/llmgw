@@ -1,57 +1,67 @@
 # Session handoff
 
 - Date: 2026-11-20
-- Sprint / version: S2 / MVP (targeting 0.1.0)
+- Sprint / version: S3 / MVP (0.1.0 checkpoint)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
-- S2 closeout commit: 41b12a8 (use `git rev-parse HEAD` for any later commits)
+- S3 commits: 2998432, 8d18abc, and the S3 closeout commit at `HEAD`
 - Push status: pushed to origin/main
 - State: complete
 
 ## Completed this session
-- Added normalized streaming types (`ChatChunk`, `Delta`, tool-call deltas, OpenAI wire shapes) and extended the `Provider` trait with `chat_stream`.
-- Implemented an upstream SSE decoder that handles fragmented frames, multiple events per chunk, CRLF, comments, and trailing events; malformed JSON becomes a stream error.
-- Implemented OpenAI streaming adapter with `stream_options.include_usage`, cancellation on dropped streams, and mid-stream error classification.
-- Re-emitted provider chunks as OpenAI-compatible SSE with request id/model, `[DONE]` terminator, and a final error event without `[DONE]` on upstream failure.
-- Added mock scenarios `stream_ok`, `stream_cut`, `stream_malformed`, `client_cancel` with cancellation counters; default `ok` + `stream: true` selects `stream_ok`.
-- Updated README, CHANGELOG.md, STATUS.md, and this handoff.
+- Added the `requests` SQLite schema with project/key/alias/time/status indexes and an integer-prefixed `0001_init.sql` migration.
+- Added `UsageEvent`, bounded `UsageLog::try_send` logging, and a background `UsageWriter` that flushes by batch size or interval.
+- Tapped provider streams for TTFT and final usage; dropped streams emit `client_cancelled`, upstream stream errors emit `error`.
+- Added `ProviderError::kind()` and shared `parse_retry_after`; OpenAI adapter now uses the shared parser.
+- Added a non-streaming Anthropic Messages adapter: system extraction, `max_tokens` default 1024, role validation, text/cache usage mapping, and sanitized errors.
+- Added temporary model-name provider selection (`claude*` → Anthropic when `GATEWAY_ANTHROPIC_API_KEY` is set; other models → OpenAI-compatible provider).
+- Updated config, provider compatibility, data model, test plan, observability, README, ADR 0004, STATUS.md, CHANGELOG.md, and this handoff.
 
 ## Test evidence
 - `cargo fmt --all -- --check`: pass
 - `cargo clippy --offline --all-targets -- -D warnings`: pass
-- `cargo test --offline`: pass — 34 tests (9 gateway integration, 8 core, 12 provider, 5 config)
+- `cargo test --offline`: pass — 52 tests (12 gateway integration, 6 gateway unit, 10 core, 16 provider, 5 config, 3 storage)
 - `cargo build --offline`: pass
+- Fresh `sqlx migrate run --source crates/storage/migrations` against `target/migration-test-s3.db`: `1/migrate init`; `requests` columns and 4 indexes verified
 - `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts`: pass (exit 0)
-- OpenAI Python SDK 3.24.0 (`OpenAI` client) streaming smoke against local gateway: pass (`SDK_STREAM_PASS`, content `Hello`)
-- Secret-pattern scan: pass (`NO_SECRET_PATTERNS`)
-- Frontend/E2E/migration/security audits: not applicable to S2 scope
+- OpenAI Python SDK 3.24.0 non-streaming and streaming smoke against local gateway: pass (`echo: Hello` / `Hello`)
+- Secret-pattern scan: pass (no matches outside fixtures/mock/docs)
 
 ## Files changed
 - `Cargo.lock`, `README.md`, `STATUS.md`, `CHANGELOG.md`, `HANDOFF.md`
-- `crates/core/src/chat.rs`, `tests/fixtures/providers/openai/chat-chunks.json`
-- `crates/providers/Cargo.toml`, `crates/providers/src/lib.rs`, `crates/providers/src/openai.rs`, `crates/providers/src/sse.rs`, `crates/providers/src/mock.rs`, `tests/fixtures/sse/**`
-- `crates/gateway/Cargo.toml`, `crates/gateway/src/routes/chat.rs`, `crates/gateway/tests/chat.rs`
+- `docs/adr/0004-aliases-over-model-names.md`, `docs/config-reference.md`, `docs/data-model.md`, `docs/observability.md`, `docs/provider-compatibility.md`, `docs/test-plan.md`
+- `crates/core/src/usage.rs`, `crates/core/src/lib.rs`
+- `crates/storage/Cargo.toml`, `crates/storage/migrations/0001_init.sql`, `crates/storage/src/lib.rs`, `crates/storage/src/usage.rs`
+- `crates/providers/Cargo.toml`, `crates/providers/src/anthropic.rs`, `crates/providers/src/error.rs`, `crates/providers/src/lib.rs`, `crates/providers/src/mock.rs`, `crates/providers/src/openai.rs`, `crates/providers/tests/fixtures/providers/anthropic/message-response.json`
+- `crates/gateway/Cargo.toml`, `crates/gateway/src/lib.rs`, `crates/gateway/src/provider_registry.rs`, `crates/gateway/src/router.rs`, `crates/gateway/src/routes/chat.rs`, `crates/gateway/src/usage.rs`, `crates/gateway/tests/chat.rs`
+- `crates/server/Cargo.toml`, `crates/server/src/config.rs`, `crates/server/src/main.rs`
 
 ## Deferred / carryover
-- 2.6 — SQLite + sqlx setup and migrations (`projects`, `api_keys`).
-- 2.7 — Key generation and hashing (`gw-<random>`, SHA-256, display prefix); deferred with the auth slice, not removed (Never cut).
-- 2.8 — Auth middleware attaching `AuthContext`.
-- 2.9 — Key CLI (`cargo run -p server -- key create/revoke/list --project`).
+- 3.7 — Anthropic streaming event translation; Anthropic streaming returns `400 unsupported_field` until this lands.
+- 3.8 — Tool-call mapping between formats; Anthropic tools return `400 unsupported_field` until this lands.
+- 3.5 — Graceful shutdown that drains requests and the log channel.
+- 2.6–2.9 — S2 auth spill (SQLite keys, hashing, middleware, CLI); user-approved deferral, key hashing remains mandatory when the slice lands.
 - 1.4 — CI pipeline; carried from S1.
 - 1.9 — Full upstream error matrix; carried from S1.
 - 1.10 — UI scaffold; carried from S1.
 
 ## Open decisions and risks
-- Committed exactly 16 pts (2.1–2.5) per the S2 note; auth/DB/CLI spill to S3.
-- No virtual-key auth yet: do not expose the listener publicly.
-- Mid-stream failures are not retried; the final SSE error event is the only signal after the first chunk.
-- Unknown TOML keys are still ignored although config-reference.md specifies a warning; align in a later sprint.
+- Committed exactly 18 pts (3.1–3.4, 3.6, 3.9) with user approval.
+- Key hashing (2.7) is deferred a second time, a documented deviation from the "Never cut" rule.
+- With no virtual keys yet, usage rows use local placeholders `local` / `local-key`; do not expose the listener publicly.
+- Model selection is temporary and will be replaced by aliases in S4; see ADR 0004.
+- `cost_usd` and `attempts` remain null until pricing and retry layers land.
+- No control-plane change, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` were intentionally left unchanged.
 
 ## Gotchas for the next session
-- `cargo run -p server` uses the in-process mock when `GATEWAY_UPSTREAM_BASE_URL` is unset, so streaming works offline.
-- The scenario selector is `x-mock-scenario` (header or JSON body field); streaming requests with the default `ok` scenario route to `stream_ok`.
-- The core crate directory is `crates/core/` but the package is `gateway-core` to avoid the std `core` name collision.
+- `cargo run -p server` uses the in-process mock when `GATEWAY_UPSTREAM_BASE_URL` is unset; it now also creates/migrates `DATABASE_URL` and starts the usage writer.
+- The scenario selector is `x-mock-scenario` (header or JSON body field); the mock now serves both `/v1/chat/completions` and `/v1/messages`.
+- The core crate directory is `crates/core/` but the package is `gateway-core`.
 - `Cargo.lock` is committed; use `--offline` when the network is unavailable.
-- No control-plane change in S2, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` were intentionally left unchanged.
+- Migration filenames must use integer prefixes (`0001_init.sql`); `V0001__init.sql` is rejected by sqlx.
 
 ## Next step
-Paste MASTER_PROMPT.md with: Sprint = S3
+Paste MASTER_PROMPT.md with: Sprint = S4
+
+## S2 history
+- S2 committed exactly 16 pts (2.1–2.5): streaming trait, SSE parser, OpenAI streaming adapter, OpenAI SSE re-emission, disconnect cancellation, and mid-stream errors.
+- S2 test evidence: fmt/lint/tests/build/OpenAPI/SDK streaming smoke/secret scan all passed; auth/DB/CLI spilled to S3.

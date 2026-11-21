@@ -17,6 +17,8 @@ pub struct Config {
     pub max_body_bytes: usize,
     pub upstream_base_url: Option<String>,
     pub upstream_api_key: Option<String>,
+    pub anthropic_base_url: String,
+    pub anthropic_api_key: Option<String>,
 }
 
 impl fmt::Debug for Config {
@@ -41,6 +43,15 @@ impl fmt::Debug for Config {
             .field(
                 "upstream_api_key",
                 &if self.upstream_api_key.is_some() {
+                    "<redacted>"
+                } else {
+                    "<none>"
+                },
+            )
+            .field("anthropic_base_url", &self.anthropic_base_url)
+            .field(
+                "anthropic_api_key",
+                &if self.anthropic_api_key.is_some() {
                     "<redacted>"
                 } else {
                     "<none>"
@@ -154,6 +165,8 @@ impl Config {
             max_body_bytes: 1_048_576,
             upstream_base_url: None,
             upstream_api_key: None,
+            anthropic_base_url: "https://api.anthropic.com/v1".to_owned(),
+            anthropic_api_key: None,
         };
 
         if let Some(server) = file.server {
@@ -221,6 +234,10 @@ impl Config {
         }
         config.upstream_base_url = env.get("GATEWAY_UPSTREAM_BASE_URL");
         config.upstream_api_key = env.get("GATEWAY_UPSTREAM_API_KEY");
+        if let Some(value) = env.get("GATEWAY_ANTHROPIC_BASE_URL") {
+            config.anthropic_base_url = value;
+        }
+        config.anthropic_api_key = env.get("GATEWAY_ANTHROPIC_API_KEY");
 
         config.validate()?;
         Ok(config)
@@ -261,7 +278,7 @@ fn parse_bool(value: &str) -> Option<bool> {
 }
 
 fn warn_unknown_env() {
-    const KNOWN: [&str; 11] = [
+    const KNOWN: [&str; 13] = [
         "GATEWAY_CONFIG",
         "GATEWAY_DATA_LISTEN",
         "GATEWAY_ADMIN_LISTEN",
@@ -271,6 +288,8 @@ fn warn_unknown_env() {
         "GATEWAY_MAX_BODY_BYTES",
         "GATEWAY_UPSTREAM_BASE_URL",
         "GATEWAY_UPSTREAM_API_KEY",
+        "GATEWAY_ANTHROPIC_BASE_URL",
+        "GATEWAY_ANTHROPIC_API_KEY",
         "GATEWAY_MASTER_KEY",
         "GATEWAY_MASTER_KEY_PREVIOUS",
     ];
@@ -315,9 +334,19 @@ mod tests {
             "127.0.0.1:9000".to_owned(),
         );
         values.insert("RUST_LOG".to_owned(), "debug".to_owned());
+        values.insert(
+            "GATEWAY_ANTHROPIC_BASE_URL".to_owned(),
+            "http://127.0.0.1:9999/v1".to_owned(),
+        );
+        values.insert(
+            "GATEWAY_ANTHROPIC_API_KEY".to_owned(),
+            "test-anthropic-key".to_owned(),
+        );
         let config = Config::load_from(&FakeEnv(values), missing_path()).expect("config");
         assert_eq!(config.data_listen, "127.0.0.1:9000");
         assert_eq!(config.log_level, "debug");
+        assert_eq!(config.anthropic_base_url, "http://127.0.0.1:9999/v1");
+        assert!(config.anthropic_api_key.is_some());
     }
 
     #[test]

@@ -1,8 +1,10 @@
+pub mod anthropic;
 pub mod error;
 pub mod mock;
 pub mod openai;
 pub mod sse;
 
+pub use anthropic::*;
 pub use error::*;
 pub use mock::*;
 pub use openai::*;

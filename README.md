@@ -2,7 +2,7 @@
 
 Self-hosted, OpenAI-compatible LLM gateway written in Rust, with a React admin app. Provider keys stay in the gateway; projects get revocable virtual keys, aliases, limits, retries, and per-request usage and cost tracking.
 
-> **Status: S2 streaming.** The OpenAI-compatible data plane supports non-streaming and SSE streaming completions with client-disconnect cancellation. Virtual-key auth (deferred to S3), usage logging, and the admin API/UI land later; the target setup below describes the finished system.
+> **Status: S3 (0.1.0 checkpoint).** The OpenAI-compatible data plane supports non-streaming and SSE streaming completions, client-disconnect cancellation, SQLite usage logging with TTFT, a non-streaming Anthropic adapter, and temporary model-name provider selection. Virtual-key auth (deferred again with approval) and the admin API/UI land later; the target setup below describes the finished system.
 
 ## Documentation
 
@@ -75,7 +75,7 @@ Dependency direction is one-way: `server → gateway/providers/admin-api → sto
 - Node 20+ with npm.
 - Docker and docker-compose; Caddy terminates TLS in front of the gateway.
 
-## Development (S1–S2)
+## Development (S1–S3)
 
 ```bash
 cargo build
@@ -95,7 +95,7 @@ curl -N http://localhost:8080/v1/chat/completions \
   -d '{"model":"fast","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
 
-Point at a real OpenAI-compatible upstream with `GATEWAY_UPSTREAM_BASE_URL` and `GATEWAY_UPSTREAM_API_KEY`. There is no virtual-key auth yet (deferred to S3), so do not expose the listener publicly. `GET /health` returns `{"status":"ok"}` and every response carries `X-Request-Id`. Streaming responses are OpenAI-compatible SSE chunks ending in `[DONE]`; client disconnects cancel the upstream request.
+Point at a real OpenAI-compatible upstream with `GATEWAY_UPSTREAM_BASE_URL` and `GATEWAY_UPSTREAM_API_KEY`. With `GATEWAY_ANTHROPIC_API_KEY` set, model names beginning with `claude` use Anthropic non-streaming chat; Anthropic streaming returns `400 unsupported_field` in S3. Usage rows are written to `DATABASE_URL` (default `sqlite://./gateway.db`) in batches. There is no virtual-key auth yet (deferred again), so do not expose the listener publicly. `GET /health` returns `{"status":"ok"}` and every response carries `X-Request-Id`. Streaming responses are OpenAI-compatible SSE chunks ending in `[DONE]`; client disconnects cancel the upstream request.
 
 ## Development (target)
 

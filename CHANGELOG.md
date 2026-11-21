@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — targeting 0.1.0
+## [0.1.0] - 2026-11-20
 
 ### Added
 
@@ -21,6 +21,11 @@ All notable changes to this project are documented here. The format follows [Kee
 - Conventions: Rust and React coding standards, error handling, module layout, naming, testing, commits, and definition of done.
 - Architecture decision records for SQLite, axum, plane separation, aliases, and the React admin UI.
 - README, CONTRIBUTING, and changelog.
+- SQLite usage logging with a `requests` table, metadata-only indexes, bounded non-blocking channel, and background batch writer.
+- Stream usage tap that records TTFT, final token usage, upstream stream errors, and `client_cancelled` on disconnect.
+- Non-streaming Anthropic Messages adapter with system extraction, default `max_tokens`, role mapping, cache-token usage, and sanitized error classification.
+- Temporary model-name provider selection: `claude*` routes to Anthropic when configured, other models use the OpenAI-compatible provider.
+- Anthropic mock endpoint, non-streaming fixture, and provider-routing integration tests.
 
 ### Changed
 
@@ -31,12 +36,20 @@ All notable changes to this project are documented here. The format follows [Kee
 - Moved spend accounting off the droppable usage-log path so budget enforcement stays correct under load.
 - Scaffolded the React admin UI in S1 (MVP) and deferred generated-client wiring to S6.
 - Switched release numbering to 0.1.0 → 0.2.0 → 0.3.0 → 0.4.0; removed the 1.0.0/2.0.0/3.0.0 milestones.
+- Initial migration uses integer-prefixed `0001_init.sql`; provider compatibility and config docs now reflect S3 support and deferred Anthropic features.
+
+### Deferred
+
+- Anthropic streaming translation and tool-call mapping remain unsupported and return `400 unsupported_field`.
+- Virtual-key auth, key hashing, CLI, and the admin API/UI are deferred; ADR 0004 records the temporary S3 provider selector.
+
+## [Unreleased]
 
 ## Planned releases
 
 | Version | Target | Contents |
 |---------|--------|----------|
-| 0.1.0 | End of S3 | MVP: passthrough, streaming, virtual keys, usage logging, Anthropic adapter, React admin UI scaffold |
+| 0.1.0 | Released 2026-11-20 | MVP checkpoint: passthrough, streaming, usage logging, Anthropic non-streaming, temporary model routing; virtual keys and UI scaffold deferred |
 | 0.2.0 | End of S7 | V1: aliases, pricing, retries/fallbacks, limits and budgets, admin API, React admin app, packaging |
 | 0.3.0 | End of S11 | V2: Prometheus metrics, OpenTelemetry traces, exact-match caching, guardrails, key rotation, audit views |
 | 0.4.0 | End of S17 | V3: `/v1/messages`, embeddings, smart routing, Postgres, multi-instance, semantic caching |
