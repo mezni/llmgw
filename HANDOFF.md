@@ -3,8 +3,8 @@
 - Date: 2026-11-20
 - Sprint / version: S1 / MVP (targeting 0.1.0)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
-- HEAD commit: 0d38952
-- Push status: local only (pending final handoff commit and push)
+- HEAD commit: 83f45cf (sprint closeout)
+- Push status: pushed to origin/main
 - State: complete
 
 ## Completed this session
