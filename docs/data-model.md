@@ -140,7 +140,7 @@ All indexes are defined in the migration that creates their table. Dashboard tim
 
 ## 4. Migrations
 
-- Location: `crates/storage/migrations/` with `sqlx migrate`. Names are monotonic: `V0001__init.sql`, `V0002__add_spend_period.sql`, and so on. Never edit an applied file.
+- Location: `crates/storage/migrations/` with `sqlx migrate`. Names are monotonic integer prefixes: `0001_init.sql`, `0002_add_spend_period.sql`, and so on. Never edit an applied file. The initial migration creates `projects`, `api_keys`, and `requests` only; remaining tables arrive with the sprints that use them.
 - Migrations are forward-only. To correct a mistake, add a new migration. No `down` scripts in production.
 - Each migration runs in a single transaction and must leave the schema usable by the previous binary (expand → backfill → contract across releases).
 - Additive first: add a nullable column, backfill in a second migration, then add `NOT NULL` in a third. Avoid rewriting large tables in one step.

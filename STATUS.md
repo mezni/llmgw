@@ -1,6 +1,105 @@
 # Status
 
-## Current sprint: S2 — Streaming and auth (MVP)
+## Current sprint: S3 — Usage logging and second provider (MVP, 0.1.0 checkpoint)
+- Branch: main (sprints run directly on main per MASTER_PROMPT.md)
+- Started / updated: 2026-11-20
+- State: in progress
+
+Committed scope: 18 pts (3.1, 3.2, 3.3, 3.4, 3.6, 3.9). The S3 table lists 29 pts and S2 spilled 10 more; 18 is the smallest set that delivers the MVP demo (usage in SQL, TTFT for streams, and two providers behind `/v1/chat/completions`) at approximately the 16-point capacity. Cuts follow sprint-planning.md §5: 3.8 (tool-call mapping) first, then 3.7 (Anthropic streaming translation) and 3.5 (graceful shutdown) for capacity. The S2 auth slice (2.6–2.9), including key hashing, is deferred again with the user's explicit approval of that Never-cut deviation. No control-plane change, so no OpenAPI/client regeneration. This is the 0.1.0 version checkpoint.
+
+### Task plan
+| Id | Task | Pts | State | Evidence |
+|----|------|-----|-------|----------|
+| 3.1 | `requests` table and indexes | 2 | planned | migration applies; schema matches data-model.md §2/§3 |
+| 3.2 | `UsageEvent` type and bounded mpsc channel with `try_send` | 2 | planned | unit test proves handlers never block when full |
+| 3.3 | Background batch writer (N events or T ms per transaction) | 3 | planned | writer test shows rows after flush; failures logged only |
+| 3.4 | Stream tap: TTFT, final usage, emits on end or drop | 5 | planned | stream tests cover ok, usage-only final chunk, and `client_cancelled` |
+| 3.6 | Anthropic adapter: request mapping (system prompt, required `max_tokens`, roles) | 5 | planned | fixture/mock tests for non-streaming call and field mapping |
+| 3.9 | Provider selection by model name (temporary, replaced by aliases in S4) | 1 | planned | Claude models route to Anthropic; OpenAI models stay on OpenAI |
+
+### Detailed task cards
+
+#### 3.1 — `requests` table and indexes
+- Acceptance (verbatim): "Migration applied; schema matches the architecture doc."
+- Depends on: S1 (1.1), S2 streaming (2.1–2.5). Files: `crates/storage/migrations/V0001__init.sql`, `crates/storage/src/**`, `docs/data-model.md`.
+- Tests: fresh `sqlx migrate run`; schema assertion for `requests` columns and indexes from data-model.md §2/§3.
+- Docs: data-model.md §2/§4 notes the initial migration subset.
+
+#### 3.2 — `UsageEvent` and bounded channel
+- Acceptance (verbatim): "Handlers never block on logging."
+- Depends on: 3.1. Files: `crates/core/src/usage.rs`, `crates/gateway/src/usage.rs`, crate `lib.rs` exports.
+- Tests: `try_send` on a capacity-1 channel returns immediately when full; event round-trips the documented metadata fields with no prompt/response bodies or secrets.
+- Docs: security.md §6 and observability.md §1 already define the metadata-only field set.
+
+#### 3.3 — Background batch writer
+- Acceptance (verbatim): "Rows appear after a short delay; failures logged, never propagated."
+- Depends on: 3.1, 3.2. Files: `crates/storage/src/usage.rs`, `crates/gateway/src/usage.rs`, `crates/server/src/main.rs`.
+- Tests: batched insert into a temp SQLite DB after batch-size or interval flush; closed/failed channel and bad-row paths do not panic or fail the request path.
+- Docs: architecture.md §5 and data-model.md §1 already describe WAL and best-effort writes.
+
+#### 3.4 — Stream tap
+- Acceptance (verbatim): "Cancelled streams are logged with `client_cancelled`."
+- Depends on: 3.2, S2 (2.1–2.5). Files: `crates/gateway/src/usage.rs`, `crates/gateway/src/routes/chat.rs`.
+- Tests: completed stream emits one row with TTFT and final usage; dropped stream emits one `client_cancelled` row with observed tokens; mid-stream error emits `error` without `[DONE]`.
+- Docs: api-spec.md §6 and architecture.md §4.4 already specify this behavior.
+
+#### 3.6 — Anthropic non-streaming adapter
+- Acceptance (verbatim): "Non-streaming call works against the real API."
+- Depends on: S1 (1.5, 1.7). Files: `crates/providers/src/anthropic.rs`, `crates/providers/src/lib.rs`, `crates/providers/src/mock.rs`, `tests/fixtures/providers/anthropic/**`.
+- Tests: request mapping (system extraction, `max_tokens`, roles), response mapping, cache-token usage, sanitized error classification against a local Anthropic-shaped mock; real-API smoke recorded as manual evidence, never in CI.
+- Docs: provider-compatibility.md marks non-streaming supported and streaming translation deferred; test-plan.md lists the new fixtures.
+
+#### 3.9 — Provider selection by model name
+- Acceptance (verbatim): "Request for a Claude model goes to Anthropic."
+- Depends on: 3.6. Files: `crates/gateway/src/router.rs`, `crates/gateway/src/routes/chat.rs`, `crates/server/src/main.rs`.
+- Tests: Claude model routes to Anthropic mock; other models route to OpenAI mock; response still echoes the client's model alias.
+- Docs: ADR 0004 and api-spec.md §1 note this temporary selector is replaced by aliases in S4.
+
+### Verification
+| Check | Command | Result |
+|-------|---------|--------|
+| Format | `cargo fmt --all -- --check` | pending |
+| Lint | `cargo clippy --offline --all-targets -- -D warnings` | pending |
+| Rust tests | `cargo test --offline` | pending |
+| Build | `cargo build --offline` | pending |
+| Frontend | `npm run typecheck && npm run lint && npm test` | not applicable — no UI changes |
+| OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pending |
+| Migration | fresh `sqlx migrate run` against a temp DB + schema check | pending |
+| E2E | `npm run e2e` | not applicable — S6 onward |
+| SDK contract | OpenAI Python SDK smoke | pending |
+| Security | secret-pattern scan | pending |
+
+### Decisions and deviations
+- Sprints run directly on `main` (MASTER_PROMPT.md override); no feature branch.
+- Scope approved by the user: 3.1–3.4, 3.6, 3.9 (18 pts). Key hashing (2.7) is deferred a second time with explicit approval, a documented deviation from the "Never cut" rule; it remains mandatory when the auth slice lands.
+- Cut 3.8 first per sprint-planning.md §5; 3.7 and 3.5 cut for capacity, not removed from the backlog.
+- With no virtual keys yet, request-log rows use the documented local placeholders `local` / `local-key`; no client secret is stored.
+- Anthropic streaming translation (3.7) is deferred, so Anthropic-backed streaming requests return a clear unsupported error until S3's remaining scope or S4; provider-compatibility.md is updated to match.
+- No control-plane change, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` remain unchanged.
+- 0.1.0 version checkpoint: convert `[Unreleased]` to a dated 0.1.0 release in CHANGELOG.md and start a new `[Unreleased]` section.
+
+### Deferred / carryover
+- 3.7 — Anthropic streaming event translation; capacity, after first cut in §5.
+- 3.8 — Tool-call mapping between formats; first cut in §5.
+- 3.5 — Graceful shutdown that drains requests and the log channel; capacity.
+- 2.6–2.9 — S2 auth spill (SQLite keys, hashing, middleware, CLI); user-approved deferral.
+- 1.4 — CI pipeline; carried from S1.
+- 1.9 — Full upstream error matrix; carried from S1.
+- 1.10 — UI scaffold; carried from S1.
+
+### Blockers
+- None.
+
+### Definition of done
+- [ ] Acceptance criteria met for committed tasks
+- [ ] fmt, clippy, tests pass
+- [ ] Mock-provider scenarios covered; real-provider evidence recorded where relevant
+- [ ] Docs and CHANGELOG updated
+- [ ] No secrets in logs, fixtures, or repo
+- [ ] Generated client unchanged (no OpenAPI change)
+- [ ] Committed on main and pushed
+
+## Sprint S2 — Streaming and auth (MVP)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
 - Started / updated: 2026-11-20
 - State: complete
