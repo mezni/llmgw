@@ -1,11 +1,16 @@
+use std::collections::VecDeque;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use gateway_core::{ChatRequest, ChatResponse};
+use axum::body::Bytes;
+use futures_core::stream::BoxStream;
+use futures_util::{Stream, StreamExt};
+use gateway_core::{ChatChunk, ChatRequest, ChatResponse, OpenAiStreamChunk};
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
 
+use crate::sse::{SseDecoder, SseEvent};
 use crate::{from_reqwest_error, Provider, ProviderError};
 
 pub struct OpenAiProvider {
@@ -64,6 +69,115 @@ impl Provider for OpenAiProvider {
             .await
             .map_err(from_reqwest_error)
     }
+
+    async fn chat_stream(
+        &self,
+        mut request: ChatRequest,
+    ) -> Result<BoxStream<'static, Result<ChatChunk, ProviderError>>, ProviderError> {
+        request.stream = true;
+        request
+            .extra
+            .entry("stream_options")
+            .or_insert_with(|| json!({ "include_usage": true }));
+
+        let response = self
+            .client
+            .post(self.endpoint())
+            .bearer_auth(&self.api_key)
+            .header("content-type", "application/json")
+            .timeout(self.timeout)
+            .json(&request)
+            .send()
+            .await
+            .map_err(from_reqwest_error)?;
+
+        if !response.status().is_success() {
+            return Err(classify_error(response).await);
+        }
+
+        Ok(Box::pin(stream_chunks(response.bytes_stream())))
+    }
+}
+
+struct StreamState<S> {
+    bytes: S,
+    decoder: SseDecoder,
+    pending: VecDeque<SseEvent>,
+    failed: bool,
+}
+
+fn stream_chunks<S>(
+    bytes: S,
+) -> impl Stream<Item = Result<ChatChunk, ProviderError>> + Send + 'static
+where
+    S: Stream<Item = Result<Bytes, reqwest::Error>> + Send + Unpin + 'static,
+{
+    futures_util::stream::unfold(
+        StreamState {
+            bytes,
+            decoder: SseDecoder::new(),
+            pending: VecDeque::new(),
+            failed: false,
+        },
+        |mut state| async move {
+            if state.failed {
+                return None;
+            }
+
+            loop {
+                if let Some(event) = state.pending.pop_front() {
+                    if event.data.trim() == "[DONE]" {
+                        return None;
+                    }
+                    return match decode_chunk(&event.data) {
+                        Ok(chunk) => Some((Ok(chunk), state)),
+                        Err(error) => {
+                            state.failed = true;
+                            Some((Err(error), state))
+                        }
+                    };
+                }
+
+                match state.bytes.next().await {
+                    Some(Ok(bytes)) => state.pending.extend(state.decoder.push(&bytes)),
+                    Some(Err(error)) => {
+                        state.failed = true;
+                        return Some((
+                            Err(ProviderError::Stream(format!(
+                                "upstream stream error: {error}"
+                            ))),
+                            state,
+                        ));
+                    }
+                    None => {
+                        state.pending.extend(state.decoder.finish());
+                        if state.pending.is_empty() {
+                            state.failed = true;
+                            return Some((
+                                Err(ProviderError::Stream(
+                                    "upstream stream ended before [DONE]".to_owned(),
+                                )),
+                                state,
+                            ));
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
+fn decode_chunk(data: &str) -> Result<ChatChunk, ProviderError> {
+    let value: Value = serde_json::from_str(data)
+        .map_err(|error| ProviderError::Stream(format!("malformed upstream frame: {error}")))?;
+    if value.get("error").is_some() {
+        return Err(ProviderError::Stream(
+            "upstream reported a stream error".to_owned(),
+        ));
+    }
+    let chunk: OpenAiStreamChunk = serde_json::from_value(value)
+        .map_err(|error| ProviderError::Stream(format!("invalid upstream chunk: {error}")))?;
+    Ok(ChatChunk::from(chunk))
 }
 
 async fn classify_error(response: reqwest::Response) -> ProviderError {
@@ -100,6 +214,8 @@ fn parse_retry_after(headers: &HeaderMap) -> Option<Duration> {
 mod tests {
     use super::*;
     use crate::mock::{router, MockState};
+    use futures_util::StreamExt;
+    use gateway_core::FinishReason;
 
     const REQUEST_FIXTURE: &str =
         include_str!("../../../tests/fixtures/providers/openai/chat-request.json");
@@ -179,5 +295,83 @@ mod tests {
             error,
             ProviderError::BadRequest { status: 400, .. }
         ));
+    }
+
+    fn streaming_request(scenario: &str) -> ChatRequest {
+        let mut request = request();
+        request.extra.insert(
+            "x-mock-scenario".to_owned(),
+            Value::String(scenario.to_owned()),
+        );
+        request
+    }
+
+    #[tokio::test]
+    async fn streams_chunks_until_done() {
+        let (base_url, _) = spawn_mock().await;
+        let stream = provider(base_url)
+            .chat_stream(streaming_request("stream_ok"))
+            .await
+            .expect("stream");
+        let chunks: Vec<ChatChunk> = stream.map(|item| item.expect("chunk")).collect().await;
+
+        assert_eq!(chunks.len(), 3);
+        let content: String = chunks
+            .iter()
+            .filter_map(|chunk| chunk.delta.content.as_deref())
+            .collect();
+        assert_eq!(content, "Hello");
+        assert_eq!(chunks[0].delta.role, Some(gateway_core::Role::Assistant));
+        assert_eq!(chunks[2].finish_reason, Some(FinishReason::Stop));
+        assert_eq!(chunks[2].usage.expect("usage").output_tokens, 5);
+    }
+
+    #[tokio::test]
+    async fn maps_malformed_stream_to_error() {
+        let (base_url, _) = spawn_mock().await;
+        let stream = provider(base_url)
+            .chat_stream(streaming_request("stream_malformed"))
+            .await
+            .expect("stream");
+        let items: Vec<Result<ChatChunk, ProviderError>> = stream.collect().await;
+
+        assert!(matches!(items.last(), Some(Err(ProviderError::Stream(_)))));
+    }
+
+    #[tokio::test]
+    async fn maps_cut_stream_to_error() {
+        let (base_url, _) = spawn_mock().await;
+        let stream = provider(base_url)
+            .chat_stream(streaming_request("stream_cut"))
+            .await
+            .expect("stream");
+        let items: Vec<Result<ChatChunk, ProviderError>> = stream.collect().await;
+
+        assert_eq!(items.len(), 2);
+        assert!(matches!(items[1], Err(ProviderError::Stream(_))));
+    }
+
+    #[tokio::test]
+    async fn cancels_upstream_when_stream_is_dropped() {
+        let (base_url, state) = spawn_mock().await;
+        let mut stream = provider(base_url)
+            .chat_stream(streaming_request("client_cancel"))
+            .await
+            .expect("stream");
+        let first = stream.next().await.expect("first chunk").expect("valid");
+        assert_eq!(first.delta.content.as_deref(), Some("He"));
+        drop(stream);
+
+        let observed = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if state.cancellations() > 0 {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("cancellation observed");
+        assert!(observed);
     }
 }
