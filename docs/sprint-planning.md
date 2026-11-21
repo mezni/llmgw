@@ -46,13 +46,13 @@ The admin web app is scaffolded in S1 (MVP) and wired to the real admin API in S
 | S8 | — | V2 | Metrics and tracing | Prometheus `/metrics`, OpenTelemetry traces, health refinements |
 | S9 | — | V2 | Exact-match caching | Cache with TTL, bypass header, cost savings visible |
 | S10 | — | V2 | Guardrails | PII redaction, blocked patterns, size and content rules |
-| S11 | — | V2 | Key lifecycle and audit; V2 release | Key rotation, richer audit views, UI updates, v2.0.0 |
+| S11 | — | V2 | Key lifecycle and audit; V2 release | Key rotation, richer audit views, UI updates, v0.3.0 |
 | S12 | — | V3 | More endpoints | Native `/v1/messages` and `/v1/embeddings` |
 | S13 | — | V3 | Smart routing | A/B and canary routing, rule-based routing |
 | S14 | — | V3 | Postgres | Pluggable storage backend with migration path |
 | S15 | — | V3 | Multi-instance | Shared rate limiting, spend counters, config propagation |
 | S16 | — | V3 | Semantic caching | Embedding-based cache with similarity threshold |
-| S17 | — | V3 | Hardening; V3 release | Load and chaos tests, docs, v3.0.0 |
+| S17 | — | V3 | Hardening; V3 release | Load and chaos tests, docs, v0.4.0 |
 
 Sprint task tables list the full identified scope (22–36 pts). Commit only ~16 pts per sprint and treat the remainder as stretch or carryover, using the cut order in §5. Totals are not commitments.
 
@@ -60,7 +60,7 @@ Sprint task tables list the full identified scope (22–36 pts). Commit only ~16
 
 **Entry criteria**
 
-- **V2 (S8):** V1 released (v1.0.0 tagged), two real projects run through the gateway, S7 retro actions resolved.
+- **V2 (S8):** V1 released (v0.2.0 tagged), two real projects run through the gateway, S7 retro actions resolved.
 - **V3 (S12):** V2 released; decide whether multi-instance is a real need or a learning exercise (affects the depth of S14–S15); run a short design spike at the start of S14 and S15.
 
 ## Part I — MVP and V1 (S1–S7)
@@ -222,7 +222,7 @@ Stack decided and frozen: Vite + React + TypeScript SPA, TanStack Router and Que
 | 7.6 | Log retention and cleanup job | 2 | Old rows pruned on schedule |
 | 7.7 | README, client examples (Python, TS, curl), configuration reference | 3 | A new reader can run it in under 15 minutes |
 | 7.8 | Migrate two real projects to the gateway | 3 | Both work with only `base_url` and `api_key` changed |
-| 7.9 | Release v1.0.0 tag, changelog, retro, V2 backlog grooming | 2 | Tag pushed |
+| 7.9 | Release v0.2.0 tag, changelog, retro, V2 backlog grooming | 2 | Tag pushed |
 
 **Total:** 26 pts
 **Learning focus:** testing async systems, deployment, operational thinking.
@@ -312,7 +312,7 @@ Stack decided and frozen: Vite + React + TypeScript SPA, TanStack Router and Que
 | 11.6 | Budget alerts: webhook or email at 80% and 100% thresholds | 3 | Fires once per threshold per period |
 | 11.7 | Admin UI updates for everything shipped in V2 | 5 | Metrics link, cache, guardrails, keys, audit; extends the existing React app |
 | 11.8 | V2 regression pass: integration, contract, and load tests re-run | 3 | No V1 behavior regressions |
-| 11.9 | Docs, changelog, migration notes, v2.0.0 tag, retro | 2 | Upgrade from V1 documented and tested |
+| 11.9 | Docs, changelog, migration notes, v0.3.0 tag, retro | 2 | Upgrade from V1 documented and tested |
 
 **Total:** 28 pts (cut 11.3 first)
 **Learning focus:** zero-downtime credential rotation, access control, change auditing.
@@ -442,7 +442,7 @@ Design spike (first 2 days): decide the shared state store. Recommendation: Redi
 | 17.4 | Performance profiling and fixes (flamegraphs, allocation hotspots) | 5 | Documented before and after |
 | 17.5 | Upgrade and migration guide (V2 to V3, SQLite to Postgres, single to multi-instance) | 3 | Tested end to end once |
 | 17.6 | Documentation refresh: architecture, product, ops runbook | 3 | Matches what shipped |
-| 17.7 | Release v3.0.0, changelog, retro, next-horizon backlog | 2 | Tag pushed |
+| 17.7 | Release v0.4.0, changelog, retro, next-horizon backlog | 2 | Tag pushed |
 
 **Total:** 26 pts
 

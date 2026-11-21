@@ -1,0 +1,557 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LLM Gateway Admin API",
+    "version": "1.0.0",
+    "description": "Control-plane contract. Machine-readable companion to docs/admin-api.md. Generated from utoipa annotations from sprint 5.11 onward; do not hand-edit after that point."
+  },
+  "servers": [
+    { "url": "http://localhost:8081/admin/v1", "description": "Local admin listener" }
+  ],
+  "tags": [
+    { "name": "auth" },
+    { "name": "projects" },
+    { "name": "providers" },
+    { "name": "aliases" },
+    { "name": "usage" },
+    { "name": "audit" }
+  ],
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "operationId": "login",
+        "summary": "Start an admin session",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string", "format": "password" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Logged in; session cookie set" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": ["auth"],
+        "operationId": "logout",
+        "summary": "Clear the admin session",
+        "responses": { "204": { "description": "Logged out" } }
+      }
+    },
+    "/projects": {
+      "get": {
+        "tags": ["projects"],
+        "operationId": "listProjects",
+        "parameters": [{ "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }],
+        "responses": {
+          "200": {
+            "description": "Paginated projects",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } } } }
+          }
+        }
+      },
+      "post": {
+        "tags": ["projects"],
+        "operationId": "createProject",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectCreate" } } } },
+        "responses": {
+          "200": { "description": "Existing project (idempotent create)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } },
+          "201": { "description": "Created project", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/projects/{project_id}": {
+      "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+      "get": {
+        "tags": ["projects"],
+        "operationId": "getProject",
+        "responses": {
+          "200": { "description": "Project detail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "tags": ["projects"],
+        "operationId": "updateProject",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectPatch" } } } },
+        "responses": {
+          "200": { "description": "Updated project", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
+      },
+      "delete": {
+        "tags": ["projects"],
+        "operationId": "deleteProject",
+        "responses": { "204": { "description": "Deleted" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/projects/{project_id}/keys": {
+      "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+      "get": {
+        "tags": ["projects"],
+        "operationId": "listKeys",
+        "responses": {
+          "200": { "description": "Keys for the project", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Key" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["projects"],
+        "operationId": "createKey",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KeyCreate" } } } },
+        "responses": {
+          "201": { "description": "Created key; secret returned only here", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KeyCreated" } } } },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/keys/{key_id}": {
+      "parameters": [{ "name": "key_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": {
+        "tags": ["projects"],
+        "operationId": "updateKey",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/KeyPatch" } } } },
+        "responses": {
+          "200": { "description": "Updated key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Key" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["projects"],
+        "operationId": "revokeKey",
+        "responses": { "204": { "description": "Revoked" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/providers": {
+      "get": {
+        "tags": ["providers"],
+        "operationId": "listProviders",
+        "responses": {
+          "200": { "description": "Providers without credentials", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Provider" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["providers"],
+        "operationId": "createProvider",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderCreate" } } } },
+        "responses": {
+          "201": { "description": "Created provider", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Provider" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/providers/{provider_id}": {
+      "parameters": [{ "name": "provider_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": {
+        "tags": ["providers"],
+        "operationId": "updateProvider",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderPatch" } } } },
+        "responses": {
+          "200": { "description": "Updated provider", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Provider" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/providers/{provider_id}/test": {
+      "parameters": [{ "name": "provider_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "tags": ["providers"],
+        "operationId": "testProvider",
+        "responses": {
+          "200": { "description": "Test result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProviderTestResult" } } } },
+          "502": { "$ref": "#/components/responses/ProviderUnreachable" }
+        }
+      }
+    },
+    "/models": {
+      "get": {
+        "tags": ["providers"],
+        "operationId": "listModels",
+        "responses": {
+          "200": { "description": "Models and pricing", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Model" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["providers"],
+        "operationId": "createModel",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelCreate" } } } },
+        "responses": { "201": { "description": "Created model", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Model" } } } } }
+      }
+    },
+    "/models/{model_id}": {
+      "parameters": [{ "name": "model_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": {
+        "tags": ["providers"],
+        "operationId": "updateModel",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ModelCreate" } } } },
+        "responses": {
+          "200": { "description": "Updated model", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Model" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/aliases": {
+      "get": {
+        "tags": ["aliases"],
+        "operationId": "listAliases",
+        "responses": {
+          "200": { "description": "Aliases with ordered targets", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Alias" } } } } }
+        }
+      },
+      "post": {
+        "tags": ["aliases"],
+        "operationId": "createAlias",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AliasCreate" } } } },
+        "responses": { "201": { "description": "Created alias", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Alias" } } } } }
+      }
+    },
+    "/aliases/{alias_id}": {
+      "parameters": [{ "name": "alias_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": {
+        "tags": ["aliases"],
+        "operationId": "updateAlias",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AliasCreate" } } } },
+        "responses": {
+          "200": { "description": "Updated alias", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Alias" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "delete": {
+        "tags": ["aliases"],
+        "operationId": "deleteAlias",
+        "responses": { "204": { "description": "Deleted" }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/usage": {
+      "get": {
+        "tags": ["usage"],
+        "operationId": "queryUsage",
+        "parameters": [
+          { "$ref": "#/components/parameters/From" },
+          { "$ref": "#/components/parameters/To" },
+          { "name": "bucket", "in": "query", "schema": { "type": "string", "enum": ["hour", "day"], "default": "day" } },
+          { "name": "project_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "alias", "in": "query", "schema": { "type": "string" } },
+          { "name": "model", "in": "query", "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Usage buckets", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/UsagePoint" } } } } },
+          "422": { "$ref": "#/components/responses/ValidationError" }
+        }
+      }
+    },
+    "/requests": {
+      "get": {
+        "tags": ["usage"],
+        "operationId": "listRequests",
+        "parameters": [
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/From" },
+          { "$ref": "#/components/parameters/To" },
+          { "name": "project_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "key_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "alias", "in": "query", "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Request log page", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/RequestLog" } } } } }
+        }
+      }
+    },
+    "/requests/{request_id}": {
+      "parameters": [{ "name": "request_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "tags": ["usage"],
+        "operationId": "getRequest",
+        "responses": {
+          "200": { "description": "Request detail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RequestLog" } } } },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/audit": {
+      "get": {
+        "tags": ["audit"],
+        "operationId": "listAudit",
+        "parameters": [{ "$ref": "#/components/parameters/Limit" }, { "$ref": "#/components/parameters/Cursor" }],
+        "responses": {
+          "200": { "description": "Audit entries", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEntry" } } } } }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "llmgw_session",
+        "description": "HttpOnly, SameSite=Strict session cookie set by /auth/login."
+      }
+    },
+    "parameters": {
+      "ProjectId": { "name": "project_id", "in": "path", "required": true, "schema": { "type": "string" } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } },
+      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+      "From": { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+      "To": { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } }
+    },
+    "responses": {
+      "Unauthorized": { "description": "No valid session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "NotFound": { "description": "Unknown resource", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "Conflict": { "description": "Duplicate name or id", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "ValidationError": { "description": "Validation failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "ProviderUnreachable": { "description": "Provider test failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "details": { "type": "object", "additionalProperties": { "type": "string" } }
+            }
+          }
+        }
+      },
+      "Project": {
+        "type": "object",
+        "required": ["id", "name", "created_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "monthly_budget_usd": { "type": ["number", "null"] },
+          "monthly_spend_usd": { "type": "number" },
+          "spend_period": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ProjectCreate": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "id": { "type": "string", "description": "Optional id for idempotent create" },
+          "name": { "type": "string" },
+          "monthly_budget_usd": { "type": ["number", "null"] }
+        }
+      },
+      "ProjectPatch": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "monthly_budget_usd": { "type": ["number", "null"] }
+        }
+      },
+      "Key": {
+        "type": "object",
+        "required": ["id", "project_id", "prefix", "created_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "project_id": { "type": "string" },
+          "prefix": { "type": "string" },
+          "rpm_limit": { "type": ["integer", "null"] },
+          "tpm_limit": { "type": ["integer", "null"] },
+          "expires_at": { "type": ["string", "null"], "format": "date-time" },
+          "revoked_at": { "type": ["string", "null"], "format": "date-time" },
+          "allowed_aliases": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "KeyCreate": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "rpm_limit": { "type": "integer" },
+          "tpm_limit": { "type": "integer" },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "allowed_aliases": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "KeyPatch": {
+        "type": "object",
+        "properties": {
+          "rpm_limit": { "type": ["integer", "null"] },
+          "tpm_limit": { "type": ["integer", "null"] },
+          "expires_at": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "KeyCreated": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Key" },
+          {
+            "type": "object",
+            "required": ["secret"],
+            "properties": { "secret": { "type": "string", "description": "Full key, returned once." } }
+          }
+        ]
+      },
+      "Provider": {
+        "type": "object",
+        "required": ["id", "kind", "base_url", "timeout_ms", "enabled"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["openai", "anthropic", "openai_compatible"] },
+          "base_url": { "type": "string", "format": "uri" },
+          "timeout_ms": { "type": "integer" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "ProviderCreate": {
+        "type": "object",
+        "required": ["id", "kind", "base_url", "credentials", "timeout_ms"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "enum": ["openai", "anthropic", "openai_compatible"] },
+          "base_url": { "type": "string", "format": "uri" },
+          "credentials": { "type": "string", "format": "password", "writeOnly": true },
+          "timeout_ms": { "type": "integer" },
+          "enabled": { "type": "boolean", "default": true }
+        }
+      },
+      "ProviderPatch": {
+        "type": "object",
+        "properties": {
+          "base_url": { "type": "string", "format": "uri" },
+          "credentials": { "type": "string", "format": "password", "writeOnly": true },
+          "timeout_ms": { "type": "integer" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "ProviderTestResult": {
+        "type": "object",
+        "required": ["ok", "latency_ms"],
+        "properties": {
+          "ok": { "type": "boolean" },
+          "latency_ms": { "type": "integer" },
+          "status": { "type": "string" }
+        }
+      },
+      "Model": {
+        "type": "object",
+        "required": ["id", "provider_id", "upstream_name", "input_price_per_mtok", "output_price_per_mtok"],
+        "properties": {
+          "id": { "type": "string" },
+          "provider_id": { "type": "string" },
+          "upstream_name": { "type": "string" },
+          "input_price_per_mtok": { "type": "number" },
+          "output_price_per_mtok": { "type": "number" },
+          "cached_input_price_per_mtok": { "type": ["number", "null"] }
+        }
+      },
+      "ModelCreate": {
+        "type": "object",
+        "required": ["id", "provider_id", "upstream_name", "input_price_per_mtok", "output_price_per_mtok"],
+        "properties": {
+          "id": { "type": "string" },
+          "provider_id": { "type": "string" },
+          "upstream_name": { "type": "string" },
+          "input_price_per_mtok": { "type": "number" },
+          "output_price_per_mtok": { "type": "number" },
+          "cached_input_price_per_mtok": { "type": "number" }
+        }
+      },
+      "Alias": {
+        "type": "object",
+        "required": ["id", "name", "targets", "max_attempts"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "targets": { "type": "array", "items": { "type": "string" }, "description": "Ordered model ids; index 0 is primary." },
+          "max_attempts": { "type": "integer", "minimum": 1 },
+          "timeout_ms": { "type": ["integer", "null"] }
+        }
+      },
+      "AliasCreate": {
+        "type": "object",
+        "required": ["id", "name", "targets"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "targets": { "type": "array", "items": { "type": "string" } },
+          "max_attempts": { "type": "integer", "minimum": 1, "default": 2 },
+          "timeout_ms": { "type": "integer" }
+        }
+      },
+      "UsagePoint": {
+        "type": "object",
+        "required": ["bucket", "requests", "cost_usd"],
+        "properties": {
+          "bucket": { "type": "string", "format": "date-time" },
+          "requests": { "type": "integer" },
+          "input_tokens": { "type": "integer" },
+          "output_tokens": { "type": "integer" },
+          "cached_tokens": { "type": "integer" },
+          "cost_usd": { "type": "number" },
+          "error_rate": { "type": "number" },
+          "p50_latency_ms": { "type": "integer" },
+          "p95_latency_ms": { "type": "integer" }
+        }
+      },
+      "RequestLog": {
+        "type": "object",
+        "required": ["id", "ts", "project_id", "key_id", "alias", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "ts": { "type": "string", "format": "date-time" },
+          "project_id": { "type": "string" },
+          "key_id": { "type": "string" },
+          "alias": { "type": "string" },
+          "tag": { "type": ["string", "null"] },
+          "provider_id": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "stream": { "type": "boolean" },
+          "input_tokens": { "type": ["integer", "null"] },
+          "output_tokens": { "type": ["integer", "null"] },
+          "cached_tokens": { "type": ["integer", "null"] },
+          "cost_usd": { "type": ["number", "null"] },
+          "latency_ms": { "type": ["integer", "null"] },
+          "ttft_ms": { "type": ["integer", "null"] },
+          "status": { "type": "string" },
+          "http_status": { "type": ["integer", "null"] },
+          "error_kind": { "type": ["string", "null"] },
+          "attempts_json": { "type": ["string", "null"] },
+          "request_body": { "type": ["string", "null"] },
+          "response_body": { "type": ["string", "null"] }
+        }
+      },
+      "AuditEntry": {
+        "type": "object",
+        "required": ["id", "ts", "action"],
+        "properties": {
+          "id": { "type": "string" },
+          "ts": { "type": "string", "format": "date-time" },
+          "admin_id": { "type": ["string", "null"] },
+          "action": { "type": "string" },
+          "target": { "type": ["string", "null"] },
+          "detail_json": { "type": ["string", "null"] }
+        }
+      }
+    }
+  },
+  "security": [{ "cookieAuth": [] }]
+}

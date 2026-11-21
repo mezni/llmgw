@@ -270,7 +270,7 @@ erDiagram
     ADMIN_USERS ||--o{ AUDIT_LOG : performs
 ```
 
-Tables (SQLite, abbreviated):
+Tables (SQLite, abbreviated; full schema, indexes, and retention in [data-model.md](data-model.md)):
 
 ```sql
 CREATE TABLE projects (
@@ -379,7 +379,7 @@ CREATE TABLE audit_log (
 
 Data plane (port 8080): `POST /v1/chat/completions`, `GET /v1/models` (aliases visible to the caller), `GET /health`, `GET /ready`. The client-facing contract is specified in [api-spec.md](api-spec.md). Later versions add `POST /v1/messages` and `POST /v1/embeddings` (section 16).
 
-Control plane (admin API): resource-oriented REST, JSON, versioned under `/admin/v1`:
+Control plane (admin API): resource-oriented REST, JSON, versioned under `/admin/v1`. Full contract in [admin-api.md](admin-api.md) and [openapi.json](openapi.json):
 
 | Resource | Operations |
 |----------|------------|
@@ -407,7 +407,7 @@ The built static files are served by the admin listener itself (for example `tow
 
 ## 8. Configuration and hot reload
 
-Two layers:
+Two layers (see [config-reference.md](config-reference.md) for every setting):
 
 - **Static config (TOML + env):** listen addresses, DB path, master encryption key, log level, default timeouts, logging mode. Changing it needs a restart.
 - **Dynamic config (database):** providers, models, aliases, pricing, key limits. Changeable at runtime through the admin API.
@@ -456,6 +456,8 @@ Mid-stream failures are sent as a final `data:` SSE event containing an error ob
 
 ## 11. Observability
 
+See [observability.md](observability.md) for log fields, metric names, dashboards, and alerts.
+
 - **Logs:** `tracing` with JSON output; every line carries `request_id`, project, alias.
 - **Metrics** (V2): `/metrics` in Prometheus format on the admin listener only, never on the public data-plane port. Request count, latency histogram, TTFT histogram, tokens, cost, upstream errors by provider, retries, fallbacks, circuit-breaker state, dropped log events.
 - **Traces** (V2): OpenTelemetry export, with a span per upstream attempt.
@@ -471,6 +473,8 @@ Mid-stream failures are sent as a final `data:` SSE event containing an error ob
 
 ## 13. Testing strategy
 
+Detailed scenarios, fixtures, and CI gates are in [test-plan.md](test-plan.md).
+
 | Level | What | How |
 |-------|------|-----|
 | Unit | Type conversions, cost calculation, backoff, rate limiter, alias resolution | Plain `cargo test` |
@@ -484,6 +488,8 @@ Mid-stream failures are sent as a final `data:` SSE event containing an error ob
 The mock provider is built in M1 and reused through every later milestone.
 
 ## 14. Deployment
+
+Day-two procedures are in [operations.md](operations.md).
 
 ```mermaid
 flowchart LR

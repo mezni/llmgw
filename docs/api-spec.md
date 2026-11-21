@@ -1,6 +1,6 @@
 # LLM Gateway — Data-Plane API Specification
 
-This is the contract for the public, OpenAI-compatible data plane. Clients depend on this document, not on provider SDK internals. The admin API (`/admin/v1/*`) is a separate surface described in [architecture §7](architecture.md#7-http-surfaces).
+This is the contract for the public, OpenAI-compatible data plane. Clients depend on this document, not on provider SDK internals. The admin API (`/admin/v1/*`) is a separate surface described in [admin-api.md](admin-api.md).
 
 ## 1. Scope and conformance
 

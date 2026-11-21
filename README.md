@@ -7,10 +7,20 @@ Self-hosted, OpenAI-compatible LLM gateway written in Rust, with a React admin a
 ## Documentation
 
 - [Product document](docs/product.md) — goals, features, scope, and roadmap.
+- [Public roadmap](docs/roadmap.md) — short version-oriented view of the sprint plans.
 - [Architecture](docs/architecture.md) — crates, request lifecycle, data model, error model, and deployment.
 - [Data-plane API spec](docs/api-spec.md) — endpoints, fields, streaming, headers, and error contract.
+- [Admin API](docs/admin-api.md) and [OpenAPI spec](docs/openapi.json) — control-plane contract and generated client input.
+- [Admin UI](docs/admin-ui.md) — pages, routes, components, state, auth, and design basics.
+- [Data model](docs/data-model.md) — schema, migrations, indexes, and retention.
+- [Config reference](docs/config-reference.md) — every env var and TOML setting, default, and restart flag.
 - [Provider compatibility](docs/provider-compatibility.md) — per-provider feature matrix and known quirks.
+- [Limitations](docs/limitations.md) — deliberate non-goals and versioned gaps.
 - [Security](docs/security.md) — threat model, key handling, encryption, and logging rules.
+- [Test plan](docs/test-plan.md) — test levels, mock scenarios, fixtures, and CI gates.
+- [Operations](docs/operations.md) — deploy, backup/restore, key rotation, upgrades, and failures.
+- [Observability](docs/observability.md) — log fields, metrics, dashboards, and alerts.
+- [Glossary](docs/glossary.md) — terms shared by docs and code.
 - [Sprint planning](docs/sprint-planning.md) — single S1–S17 plan for MVP through V3.
 - [Conventions](docs/conventions.md) — Rust and React standards, error handling, naming, testing, commits, and definition of done.
 - [Architecture decision records](docs/adr/) — one short record per significant choice.
@@ -103,4 +113,4 @@ curl http://localhost:8080/v1/chat/completions \
 
 ## Contributing
 
-Use short-lived branches and conventional commits; see [conventions](docs/conventions.md) for commit and branch style, coding rules, testing rules, and the definition of done.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [conventions](docs/conventions.md) for commit and branch style, coding rules, testing rules, and the definition of done.
