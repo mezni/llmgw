@@ -151,12 +151,7 @@ mod tests {
                 "timeout_error",
                 "upstream_timeout",
             ),
-            (
-                ProviderError::Auth,
-                500,
-                "internal_error",
-                "internal_error",
-            ),
+            (ProviderError::Auth, 500, "internal_error", "internal_error"),
             (
                 ProviderError::Stream("broken".to_owned()),
                 502,

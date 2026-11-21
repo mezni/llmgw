@@ -5,14 +5,14 @@ use std::time::Instant;
 use chrono::{SecondsFormat, Utc};
 use futures_util::Stream;
 use gateway_core::{Usage, UsageEvent, UsageStatus};
+
+use crate::auth::AuthContext;
 use providers::ProviderError;
 use tokio::sync::mpsc;
 use tracing::warn;
 
 pub const USAGE_CHANNEL_CAPACITY: usize = 1024;
 pub const TAG_HEADER: &str = "x-gateway-tag";
-const LOCAL_PROJECT_ID: &str = "local";
-const LOCAL_KEY_ID: &str = "local-key";
 
 #[derive(Clone)]
 pub struct UsageLog {
@@ -39,6 +39,8 @@ impl UsageLog {
 #[derive(Clone)]
 pub struct RequestUsage {
     id: String,
+    project_id: String,
+    key_id: String,
     alias: String,
     tag: Option<String>,
     provider_id: String,
@@ -50,6 +52,7 @@ pub struct RequestUsage {
 impl RequestUsage {
     pub fn new(
         id: impl Into<String>,
+        auth: AuthContext,
         alias: impl Into<String>,
         tag: Option<String>,
         provider_id: impl Into<String>,
@@ -58,6 +61,8 @@ impl RequestUsage {
     ) -> Self {
         Self {
             id: id.into(),
+            project_id: auth.project_id,
+            key_id: auth.key_id,
             alias: alias.into(),
             tag,
             provider_id: provider_id.into(),
@@ -78,8 +83,8 @@ impl RequestUsage {
         UsageEvent {
             id: self.id.clone(),
             ts: Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true),
-            project_id: LOCAL_PROJECT_ID.to_owned(),
-            key_id: LOCAL_KEY_ID.to_owned(),
+            project_id: self.project_id.clone(),
+            key_id: self.key_id.clone(),
             alias: self.alias.clone(),
             tag: self.tag.clone(),
             provider_id: Some(self.provider_id.clone()),
@@ -192,7 +197,18 @@ mod tests {
     }
 
     fn context() -> RequestUsage {
-        RequestUsage::new("req-1", "fast", None, "openai", "gpt-test", true)
+        RequestUsage::new(
+            "req-1",
+            AuthContext {
+                project_id: "project-1".to_owned(),
+                key_id: "key-1".to_owned(),
+            },
+            "fast",
+            None,
+            "openai",
+            "gpt-test",
+            true,
+        )
     }
 
     #[tokio::test]
@@ -223,6 +239,8 @@ mod tests {
         assert_eq!(items.len(), 2);
 
         let event = receiver.try_recv().expect("usage event");
+        assert_eq!(event.project_id, "project-1");
+        assert_eq!(event.key_id, "key-1");
         assert_eq!(event.status, UsageStatus::Ok);
         assert_eq!(event.input_tokens, Some(12));
         assert_eq!(event.output_tokens, Some(5));

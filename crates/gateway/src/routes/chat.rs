@@ -15,6 +15,7 @@ use gateway_core::{
 use providers::{Provider, ProviderError};
 use serde_json::json;
 
+use crate::auth::AuthContext;
 use crate::error::{map_provider_error, ApiErrorResponse};
 use crate::request_id::RequestId;
 use crate::router::AppState;
@@ -23,6 +24,7 @@ use crate::usage::{tap_stream, RequestUsage, TAG_HEADER};
 pub async fn handler(
     State(state): State<AppState>,
     Extension(request_id): Extension<RequestId>,
+    Extension(auth): Extension<AuthContext>,
     headers: HeaderMap,
     Json(request): Json<ChatRequest>,
 ) -> Result<Response, ApiErrorResponse> {
@@ -34,6 +36,7 @@ pub async fn handler(
         .map(str::to_owned);
     let context = RequestUsage::new(
         request_id.0.clone(),
+        auth,
         alias.clone(),
         tag,
         provider.id().to_owned(),
