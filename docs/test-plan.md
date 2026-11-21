@@ -27,7 +27,8 @@ The mock is an `axum` server built in M1 and selected by a header or config. Eve
 | Scenario | Behavior | What it proves |
 |----------|----------|----------------|
 | `ok` | Valid non-streaming JSON response | Passthrough, alias/model echo, usage logging |
-| `ok_with_tools` | Response with `tool_calls` | Tool round-trip and storage |
+| `tool_call` | OpenAI response with `tool_calls` | Tool round-trip and storage |
+| `tool_use` | Anthropic response with `tool_use` | Anthropic tool mapping to OpenAI `tool_calls` |
 | `slow` | Delays first byte beyond the alias timeout | Timeout, 504, in-flight snapshot behavior |
 | `rate_limited` | 429 with `Retry-After: 1` | Retry/backoff and normalized 429 |
 | `server_error` | 500 with a hostile body containing a fake key | Error sanitization, no credential echo |
@@ -35,7 +36,8 @@ The mock is an `axum` server built in M1 and selected by a header or config. Eve
 | `flaky_then_ok` | Fails once, succeeds on second attempt | Retry counting and `attempts_json` |
 | `all_targets_fail` | Every target returns 502 | Fallback exhaustion and normalized 502 |
 | `stream_ok` | Chunked SSE, including usage-only final chunk | SSE framing, TTFT, usage capture |
-| `stream_tool_fragments` | Tool-call deltas split across chunks | Index-based assembly |
+| `stream_tool` | OpenAI tool-call deltas split across chunks | Index-based assembly |
+| `anthropic_stream_tool` | Anthropic `input_json_delta` fragments | Anthropic tool-call assembly |
 | `stream_cut` | Closes the TCP stream mid-response | Final error event without `[DONE]`, cancellation cleanup |
 | `stream_malformed` | Invalid JSON lines and no `[DONE]` | Malformed SSE detection and error mapping |
 | `client_cancel` | Client drops the response body | Upstream cancellation, `client_cancelled` log status |
@@ -47,7 +49,7 @@ Each scenario records the upstream request it received so tests can assert heade
 ## 3. Fixtures
 
 - `tests/fixtures/providers/openai/` — non-streaming, streamed, tool, error, and usage payloads from real OpenAI-compatible responses with all identifiers scrubbed.
-- `crates/providers/tests/fixtures/providers/anthropic/` — non-streaming `messages` responses with cache-token usage; streaming event sequences, tool blocks, and error bodies are added with those features.
+- `crates/providers/tests/fixtures/providers/anthropic/` — non-streaming `messages` responses with cache-token usage, fragmented streaming event sequences, and error bodies; tool blocks are covered by inline fixtures in adapter tests.
 - `tests/fixtures/sdk/` — golden responses the Python and TypeScript SDKs must accept, including streaming errors.
 - `tests/fixtures/admin/` — representative OpenAPI responses for each resource; also used by MSW in UI component tests.
 - `tests/fixtures/db/` — schema snapshot from a fresh migration run and a small seeded dataset used by dashboard queries.

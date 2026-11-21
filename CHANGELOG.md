@@ -45,6 +45,14 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+
+- Tool-call mapping between OpenAI and Anthropic formats: tool definitions, assistant calls, tool results, and streamed argument fragments.
+
+### Changed
+
+- Provider compatibility now marks Anthropic streaming and tool calling as supported.
+
 ## Planned releases
 
 | Version | Target | Contents |

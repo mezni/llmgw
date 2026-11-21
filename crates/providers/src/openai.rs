@@ -193,7 +193,7 @@ mod tests {
     use super::*;
     use crate::mock::{router, MockState};
     use futures_util::StreamExt;
-    use gateway_core::FinishReason;
+    use gateway_core::{FinishReason, FunctionDefinition, Tool};
 
     const REQUEST_FIXTURE: &str =
         include_str!("../../../tests/fixtures/providers/openai/chat-request.json");
@@ -327,6 +327,92 @@ mod tests {
 
         assert_eq!(items.len(), 2);
         assert!(matches!(items[1], Err(ProviderError::Stream(_))));
+    }
+
+    #[tokio::test]
+    async fn maps_non_streaming_tool_calls() {
+        let (base_url, _) = spawn_mock().await;
+        let response = provider(base_url)
+            .chat(streaming_request("tool_call"))
+            .await
+            .expect("tool response");
+        let choice = &response.choices[0];
+        let calls = choice.message.tool_calls.as_ref().expect("tool calls");
+        assert_eq!(calls[0].id, "call_weather");
+        assert_eq!(calls[0].function.name, "get_weather");
+        assert_eq!(calls[0].function.arguments, "{\"city\":\"Paris\"}");
+        assert_eq!(choice.finish_reason.as_deref(), Some("tool_calls"));
+    }
+
+    #[tokio::test]
+    async fn forwards_tool_definitions_calls_and_results() {
+        let (base_url, state) = spawn_mock().await;
+        let mut request = request();
+        request.tools = Some(vec![Tool {
+            tool_type: "function".to_owned(),
+            function: FunctionDefinition {
+                name: "get_weather".to_owned(),
+                description: Some("Get weather".to_owned()),
+                parameters: json!({"type": "object"}),
+            },
+        }]);
+        request.messages.push(gateway_core::Message {
+            role: gateway_core::Role::Assistant,
+            content: None,
+            name: None,
+            tool_call_id: None,
+            tool_calls: Some(vec![gateway_core::ToolCall {
+                id: "call_weather".to_owned(),
+                call_type: "function".to_owned(),
+                function: gateway_core::FunctionCall {
+                    name: "get_weather".to_owned(),
+                    arguments: "{\"city\":\"Paris\"}".to_owned(),
+                },
+            }]),
+        });
+        request.messages.push(gateway_core::Message {
+            role: gateway_core::Role::Tool,
+            content: Some("18C".to_owned()),
+            name: None,
+            tool_call_id: Some("call_weather".to_owned()),
+            tool_calls: None,
+        });
+
+        provider(base_url)
+            .chat(request)
+            .await
+            .expect("tool round trip");
+        let recorded = state.recorded();
+        let sent = &recorded[0];
+        assert_eq!(sent["tools"][0]["function"]["name"], "get_weather");
+        assert_eq!(sent["messages"][2]["tool_calls"][0]["id"], "call_weather");
+        assert_eq!(sent["messages"][3]["role"], "tool");
+        assert_eq!(sent["messages"][3]["tool_call_id"], "call_weather");
+    }
+
+    #[tokio::test]
+    async fn assembles_streamed_tool_call_fragments() {
+        let (base_url, _) = spawn_mock().await;
+        let stream = provider(base_url)
+            .chat_stream(streaming_request("stream_tool"))
+            .await
+            .expect("tool stream");
+        let chunks: Vec<ChatChunk> = stream.map(|item| item.expect("chunk")).collect().await;
+        let start = chunks[0].delta.tool_calls.as_ref().expect("tool start");
+        assert_eq!(start[0].id.as_deref(), Some("call_weather"));
+        assert_eq!(
+            start[0].function.as_ref().and_then(|f| f.name.as_deref()),
+            Some("get_weather")
+        );
+        let arguments: String = chunks[1..3]
+            .iter()
+            .filter_map(|chunk| chunk.delta.tool_calls.as_ref())
+            .flatten()
+            .filter_map(|call| call.function.as_ref())
+            .filter_map(|function| function.arguments.as_deref())
+            .collect();
+        assert_eq!(arguments, "{\"city\":\"Paris\"}");
+        assert_eq!(chunks[3].finish_reason, Some(FinishReason::ToolCalls));
     }
 
     #[tokio::test]

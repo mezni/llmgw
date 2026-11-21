@@ -20,7 +20,7 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 | 2.9 | CLI: `key create/revoke/list --project` | 2 | planned | CLI tests or scripted smoke against a temp DB |
 | 3.5 | Graceful shutdown draining requests and log channel | 3 | planned | SIGTERM test shows no lost usage events |
 | 3.7 | Anthropic streaming event translation | 5 | planned | fragmented SSE fixture maps events to `ChatChunk`; gateway SSE smoke |
-| 3.8 | Tool-call mapping between formats | 3 | planned | tool round trip works on both providers |
+| 3.8 | Tool-call mapping between formats | 3 | done | OpenAI/Anthropic tool round-trip tests and streamed tool-fragment tests pass |
 
 ### Detailed task cards
 

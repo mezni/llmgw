@@ -9,8 +9,8 @@ Legend: **Supported** (normalized and tested), **Partial** (works with caveats),
 | Capability | OpenAI-compatible | Anthropic | Other OpenAI-compatible |
 |------------|-------------------|-----------|-------------------------|
 | Non-streaming chat | Supported | Supported | Supported when the vendor follows the OpenAI shape |
-| Streaming (SSE) | Supported; `[DONE]` terminator | No (S3): returns `400 unsupported_field`; event translation is deferred | Partial; some vendors differ in framing or event fields |
-| Tools / function calling | Supported; `tool_calls` fragments assembled during streaming | No (S3): tool definitions and tool results return `400`; format mapping is deferred | Partial; depends on tool schema fidelity |
+| Streaming (SSE) | Supported; `[DONE]` terminator | Supported; Anthropic events translate to OpenAI-format `ChatChunk` and the gateway emits `[DONE]` | Partial; some vendors differ in framing or event fields |
+| Tools / function calling | Supported; `tool_calls` fragments assembled during streaming | Supported; `tools`, `tool_use`, and `tool_result` map between formats, including streamed argument fragments | Partial; depends on tool schema fidelity |
 | Structured output (`response_format`) | Partial: `text` and `json_object` where the model supports them; `json_schema` is not normalized | No (V1): `json_object` returns 400 rather than being silently ignored | Partial; verify with a recorded fixture |
 | Images / multimodal input | Rejected in V1 (`content` must be a string) | Rejected in V1 | Rejected in V1 |
 | Usage reporting | Supported: input/output tokens; cached tokens via `prompt_tokens_details.cached_tokens` | Supported: `input_tokens`/`output_tokens`; `cache_read_input_tokens` normalized to `cached_tokens` | Partial: some vendors omit usage, especially in streams |
@@ -33,8 +33,10 @@ Legend: **Supported** (normalized and tested), **Partial** (works with caveats),
 - Model names beginning with `claude` route to Anthropic when `GATEWAY_ANTHROPIC_API_KEY` is set; other models use the configured OpenAI-compatible provider. This temporary selector is replaced by aliases in S4.
 - `max_tokens` is required. When the client omits it, the gateway supplies a configured default (1024) before calling the provider.
 - `system` is a separate top-level field upstream; the adapter extracts `system` messages from `messages`.
-- Tool definitions and `role: tool` messages are rejected rather than silently dropped; OpenAI ↔ Anthropic tool mapping is deferred until tool-call mapping lands.
-- Streaming requests return `400 unsupported_field`; Anthropic event translation (`message_start`, `content_block_*`, `message_delta`, `message_stop`) is deferred.
+- Tool definitions map to Anthropic `tools[].input_schema`; non-function tools return `400` rather than being silently dropped.
+- Assistant `tool_calls` map to Anthropic `tool_use` blocks with JSON-parsed `input`; invalid `arguments` become `{}`. `role: tool` messages map to user `tool_result` blocks and require `tool_call_id`.
+- Anthropic `tool_use` blocks map back to OpenAI `tool_calls` with JSON-string `arguments`; streamed `input_json_delta.partial_json` fragments are assembled by index.
+- Streaming requests translate `message_start`, `content_block_*`, `message_delta`, and `message_stop` into the OpenAI-format SSE contract.
 - `cache_read_input_tokens` normalizes to `cached_tokens` in the gateway's `Usage` and is exposed as `prompt_tokens_details.cached_tokens`. `cache_creation_input_tokens` is not yet normalized.
 - Provider-specific features such as extended thinking blocks and cache-control directives are not part of the V1 normalized contract. Unsupported fields are documented here and rejected or passed through per [api-spec §5](api-spec.md#5-openai-field-support).
 
@@ -47,7 +49,7 @@ Legend: **Supported** (normalized and tested), **Partial** (works with caveats),
 ## Test obligations
 
 - Every adapter change needs recorded request/response fixtures, including fragmented and malformed SSE.
-- Integration tests exercise the shared scenario set against the mock provider: success, slow, 429 with `Retry-After`, 500, mid-stream cut, malformed SSE.
+- Integration tests exercise the shared scenario set against the mock provider: success, slow, 429 with `Retry-After`, 500, mid-stream cut, malformed SSE, non-streaming tools, and streamed tool fragments.
 - Contract tests use the official OpenAI (Python, TypeScript) and Anthropic SDKs; streaming and error shapes are part of the gate.
 - Real-provider calls are deliberate, use small prompts, and are never required for CI to pass.
 - Add or update this matrix in the same change that changes provider support. See [conventions.md](conventions.md) for the definition of done.

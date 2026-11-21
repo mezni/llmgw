@@ -25,6 +25,22 @@ const STREAM_FINISH: &str = r#"data: {"id":"chatcmpl-mock-001","object":"chat.co
 
 const STREAM_DONE: &str = "data: [DONE]\n\n";
 
+const STREAM_TOOL_START: &str = r#"data: {"id":"chatcmpl-mock-tool","object":"chat.completion.chunk","created":1763664000,"model":"fast","choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call_weather","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+"#;
+
+const STREAM_TOOL_ARGS_ONE: &str = r#"data: {"id":"chatcmpl-mock-tool","object":"chat.completion.chunk","created":1763664000,"model":"fast","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":"}}]},"finish_reason":null}]}
+
+"#;
+
+const STREAM_TOOL_ARGS_TWO: &str = r#"data: {"id":"chatcmpl-mock-tool","object":"chat.completion.chunk","created":1763664000,"model":"fast","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Paris\"}"}}]},"finish_reason":null}]}
+
+"#;
+
+const STREAM_TOOL_FINISH: &str = r#"data: {"id":"chatcmpl-mock-tool","object":"chat.completion.chunk","created":1763664000,"model":"fast","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":12,"completion_tokens":5,"total_tokens":17}}
+
+"#;
+
 const ANTHROPIC_START: &str = r#"event: message_start
 data: {"type":"message_start","message":{"id":"msg_mock_stream","type":"message","role":"assistant","model":"claude-test-1","usage":{"input_tokens":12,"output_tokens":0,"cache_read_input_tokens":3}}}
 
@@ -52,6 +68,21 @@ data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"outpu
 
 const ANTHROPIC_STOP: &str = r#"event: message_stop
 data: {"type":"message_stop"}
+
+"#;
+
+const ANTHROPIC_TOOL_START: &str = r#"event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_weather","name":"get_weather","input":{}}}
+
+"#;
+
+const ANTHROPIC_TOOL_ARGS_ONE: &str = r#"event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":"}}
+
+"#;
+
+const ANTHROPIC_TOOL_ARGS_TWO: &str = r#"event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"Paris\"}"}}
 
 "#;
 
@@ -161,7 +192,9 @@ async fn chat(
             )),
         )
             .into_response(),
-        "stream_ok" | "stream_cut" | "stream_malformed" | "client_cancel" => {
+        "tool_call" => tool_call_response(),
+
+        "stream_ok" | "stream_cut" | "stream_malformed" | "client_cancel" | "stream_tool" => {
             stream_response(&scenario, state)
         }
         _ => success(&request),
@@ -205,9 +238,30 @@ async fn anthropic_messages(
             })),
         )
             .into_response(),
-        "anthropic_stream_ok" | "anthropic_stream_cut" => {
+        "anthropic_stream_ok" | "anthropic_stream_cut" | "anthropic_stream_tool" => {
             anthropic_stream_response(scenario, state)
         }
+        "tool_use" => (
+            StatusCode::OK,
+            Json(json!({
+                "id": "msg_mock_tool",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    { "type": "text", "text": "Checking the weather." },
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_weather",
+                        "name": "get_weather",
+                        "input": { "city": "Paris" }
+                    }
+                ],
+                "model": request.get("model").and_then(Value::as_str).unwrap_or("claude-test-1"),
+                "stop_reason": "tool_use",
+                "usage": { "input_tokens": 12, "output_tokens": 5, "cache_read_input_tokens": 3 }
+            })),
+        )
+            .into_response(),
         _ => {
             let content = request
                 .get("messages")
@@ -254,6 +308,13 @@ fn stream_response(scenario: &str, state: MockState) -> Response {
             STREAM_FINISH,
             STREAM_DONE,
         ],
+        "stream_tool" => vec![
+            STREAM_TOOL_START,
+            STREAM_TOOL_ARGS_ONE,
+            STREAM_TOOL_ARGS_TWO,
+            STREAM_TOOL_FINISH,
+            STREAM_DONE,
+        ],
         _ => vec![STREAM_DONE],
     };
     sse_response(frames, state, scenario == "client_cancel")
@@ -266,6 +327,14 @@ fn anthropic_stream_response(scenario: &str, state: MockState) -> Response {
             ANTHROPIC_BLOCK_START,
             ANTHROPIC_TEXT_HE,
             ANTHROPIC_TEXT_LLO,
+            ANTHROPIC_DELTA,
+            ANTHROPIC_STOP,
+        ],
+        "anthropic_stream_tool" => vec![
+            ANTHROPIC_START,
+            ANTHROPIC_TOOL_START,
+            ANTHROPIC_TOOL_ARGS_ONE,
+            ANTHROPIC_TOOL_ARGS_TWO,
             ANTHROPIC_DELTA,
             ANTHROPIC_STOP,
         ],
@@ -334,6 +403,40 @@ fn success(request: &Value) -> Response {
                 "index": 0,
                 "message": { "role": "assistant", "content": format!("echo: {content}") },
                 "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 12,
+                "completion_tokens": 5,
+                "total_tokens": 17
+            }
+        })),
+    )
+        .into_response()
+}
+
+fn tool_call_response() -> Response {
+    (
+        StatusCode::OK,
+        Json(json!({
+            "id": "chatcmpl-mock-tool",
+            "object": "chat.completion",
+            "created": 1763664000,
+            "model": "fast",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_weather",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": "{\"city\":\"Paris\"}"
+                        }
+                    }]
+                },
+                "finish_reason": "tool_calls"
             }],
             "usage": {
                 "prompt_tokens": 12,
