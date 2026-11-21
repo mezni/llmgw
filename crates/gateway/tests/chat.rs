@@ -381,6 +381,40 @@ async fn streams_completion_as_openai_sse() {
 }
 
 #[tokio::test]
+async fn streams_anthropic_events_through_the_openai_endpoint() {
+    let (app, _, secret, _, _) = spawn_gateway().await;
+    let body = json!({
+        "model": "claude-3-5-sonnet-latest",
+        "messages": [{ "role": "user", "content": "Say hello." }],
+        "stream": true,
+        "x-mock-scenario": "anthropic_stream_ok"
+    });
+    let response = call(
+        app,
+        Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {secret}"))
+            .body(Body::from(body.to_string()))
+            .unwrap(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let events = read_sse(response).await;
+    assert_eq!(events.len(), 5);
+    assert_eq!(events[4], "[DONE]");
+    let first: Value = serde_json::from_str(&events[0]).expect("role chunk");
+    assert_eq!(first["choices"][0]["delta"]["role"], "assistant");
+    let content: Value = serde_json::from_str(&events[1]).expect("content chunk");
+    assert_eq!(content["choices"][0]["delta"]["content"], "He");
+    let final_chunk: Value = serde_json::from_str(&events[3]).expect("final chunk");
+    assert_eq!(final_chunk["choices"][0]["finish_reason"], "stop");
+    assert_eq!(final_chunk["usage"]["total_tokens"], 17);
+}
+
+#[tokio::test]
 async fn emits_error_event_without_done_on_cut_stream() {
     let (app, _, secret, _, _) = spawn_gateway().await;
     let response = call(

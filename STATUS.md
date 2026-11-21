@@ -1,6 +1,118 @@
 # Status
 
-## Current sprint: S3 — Usage logging and second provider (MVP, 0.1.0 checkpoint)
+## Current work: S1–S3 deferred sweep (MVP backlog)
+- Branch: main (sprints run directly on main per MASTER_PROMPT.md)
+- Started / updated: 2026-11-20
+- State: in progress
+- Scope: all 28 pts of deferred S1–S3 work, approved by the user; no further deferral from this set.
+
+This is a backlog-clearing pass, not a new numbered sprint and not a version checkpoint. It closes tasks carried from S1 (1.4, 1.9, 1.10), S2 (2.6–2.9), and S3 (3.5, 3.7, 3.8). The 0.1.0 release already exists in CHANGELOG.md; new work goes under `[Unreleased]`. No control-plane API changes are in scope, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` remain unchanged.
+
+### Task plan
+| Id | Task | Pts | State | Evidence |
+|----|------|-----|-------|----------|
+| 1.4 | CI: fmt, clippy, test on push | 2 | planned | workflow file; local reproduction of every CI step |
+| 1.9 | Full upstream error matrix | 2 | planned | provider error tests cover 400/401/403/408/413/429/5xx/network/timeout/stream |
+| 1.10 | Vite + React + TS admin UI scaffold | 3 | planned | dev server runs; typecheck/lint/unit tests pass; mock API only |
+| 2.6 | SQLite + sqlx setup, migrations: `projects`, `api_keys` | 3 | planned | migration test asserts both tables, WAL-enabled connection, indexes |
+| 2.7 | Key generation and hashing (`gw-<random>`, SHA-256, display prefix) | 2 | planned | secret shown once; DB stores hash/prefix only |
+| 2.8 | Auth middleware attaching `AuthContext` | 3 | planned | missing/invalid/revoked/expired keys return documented 401 body |
+| 2.9 | CLI: `key create/revoke/list --project` | 2 | planned | CLI tests or scripted smoke against a temp DB |
+| 3.5 | Graceful shutdown draining requests and log channel | 3 | planned | SIGTERM test shows no lost usage events |
+| 3.7 | Anthropic streaming event translation | 5 | planned | fragmented SSE fixture maps events to `ChatChunk`; gateway SSE smoke |
+| 3.8 | Tool-call mapping between formats | 3 | planned | tool round trip works on both providers |
+
+### Detailed task cards
+
+#### 1.4 — CI pipeline
+- Acceptance (verbatim): "Pipeline fails on warnings."
+- Files: `.github/workflows/ci.yml`, `docs/test-plan.md`.
+- Tests: workflow runs fmt, clippy `-D warnings`, Rust tests/build, migration, OpenAPI drift, frontend typecheck/lint/unit, and secret scan; every command is also reproduced locally.
+
+#### 1.9 — Full upstream error matrix
+- Acceptance (verbatim): "Upstream 400/429/500 produce correct status and error body."
+- Files: `crates/providers/src/error.rs`, `crates/providers/src/openai.rs`, `crates/providers/src/anthropic.rs`, `crates/gateway/src/error.rs`, fixtures/tests.
+- Tests: status/code/type mapping for auth, bad request, rate limit with `Retry-After`, timeout, 5xx, network, malformed stream, and sanitized hostile bodies; no credential echo.
+
+#### 1.10 — Vite + React + TS admin UI scaffold
+- Acceptance (verbatim): "Dev server runs; typecheck/lint/unit tests pass; no real credentials or admin endpoints used."
+- Files: `admin-ui/**`, `docs/admin-ui.md`, `docs/test-plan.md`.
+- Tests: `npm run typecheck && npm run lint && npm test`; dev server smoke; mock API layer has no real URLs or secrets.
+
+#### 2.6 — SQLite + sqlx setup
+- Acceptance (verbatim): "`sqlx migrate run` works; WAL mode enabled."
+- Files: `crates/storage/migrations/0001_init.sql`, `crates/storage/src/lib.rs`, `docs/data-model.md`.
+- Tests: migration test asserts `projects`, `api_keys`, indexes, and WAL pragmas.
+
+#### 2.7 — Key generation and hashing
+- Acceptance (verbatim): "Secret shown once; only the hash is stored."
+- Files: `crates/storage/src/keys.rs`, `crates/storage/src/lib.rs`, `crates/storage/src/keys/repository.rs`, docs.
+- Tests: generated secret shape `gw-<base64url>`, display prefix, SHA-256 hash, no secret in DB row, duplicate hash rejected.
+
+#### 2.8 — Auth middleware
+- Acceptance (verbatim): "Missing, invalid, and revoked keys return 401 with the correct error body."
+- Files: `crates/gateway/src/auth.rs`, `crates/gateway/src/router.rs`, `crates/gateway/tests/chat.rs`, `docs/api-spec.md`.
+- Tests: valid key passes and attaches `AuthContext`; missing/invalid/revoked/expired keys get `401 authentication_error/invalid_api_key`; usage rows use real project/key ids.
+
+#### 2.9 — Key CLI
+- Acceptance (verbatim): "Usable from the terminal against the DB."
+- Files: `crates/server/src/main.rs`, `docs/config-reference.md`, `docs/operations.md`.
+- Tests: `key create` prints the secret once, `key list` shows prefix only, `key revoke` makes auth fail.
+
+#### 3.5 — Graceful shutdown
+- Acceptance (verbatim): "No lost events on SIGTERM in a test."
+- Files: `crates/server/src/main.rs`, `crates/storage/src/usage.rs`, `crates/gateway/src/usage.rs`.
+- Tests: shutdown closes the log channel, flushes the batch writer, and test observes all rows.
+
+#### 3.7 — Anthropic streaming translation
+- Acceptance (verbatim): "Streaming works through the same OpenAI-format endpoint."
+- Files: `crates/providers/src/anthropic.rs`, `crates/providers/src/mock.rs`, fixtures, `docs/provider-compatibility.md`.
+- Tests: `message_start`/`content_block_*`/`message_delta`/`message_stop` translated to `ChatChunk`, fragmented frames, errors, and gateway SSE smoke.
+
+#### 3.8 — Tool-call mapping
+- Acceptance (verbatim): "A tool-calling round trip works on both providers."
+- Files: `crates/providers/src/openai.rs`, `crates/providers/src/anthropic.rs`, `crates/providers/src/mock.rs`, fixtures, docs.
+- Tests: OpenAI tool definitions/results round trip; Anthropic `tools`/`tool_use`/`tool_result` round trip; streamed tool fragments assemble.
+
+### Verification
+| Check | Command | Result |
+|-------|---------|--------|
+| Format | `cargo fmt --all -- --check` | pending |
+| Lint | `cargo clippy --offline --all-targets -- -D warnings` | pending |
+| Rust tests | `cargo test --offline` | pending |
+| Build | `cargo build --offline` | pending |
+| Frontend | `npm run typecheck && npm run lint && npm test` in `admin-ui` | pending |
+| OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pending |
+| Migration | fresh `sqlx migrate run` + schema/pragmas check | pending |
+| E2E | `npm run e2e` in `admin-ui` | pending |
+| SDK contract | OpenAI Python SDK non-streaming + streaming smoke | pending |
+| Security | secret-pattern scan | pending |
+
+### Decisions and deviations
+- All deferred S1–S3 work is in scope by explicit user choice; no deferred item from this set is cut.
+- Work is done directly on `main`; no branch or version roll.
+- Key hashing (2.7) lands now after two documented deferrals; it remains a Never-cut requirement.
+- The UI scaffold uses a local mock API layer and local UI primitives; the generated OpenAPI client and generated shadcn components remain S6 work.
+- No control-plane change: OpenAPI and generated TypeScript client stay unchanged.
+- SIGTERM draining uses the existing axum graceful shutdown plus explicit usage-channel closure and writer flush.
+
+### Deferred / carryover
+- None from S1–S3 after this pass. Future sprint work (S4–S17) remains out of scope.
+
+### Blockers
+- None.
+
+### Definition of done
+- [ ] Acceptance criteria met for all committed tasks
+- [ ] fmt, clippy, tests pass
+- [ ] Frontend typecheck, lint, unit tests pass
+- [ ] OpenAPI/client drift check passes
+- [ ] Migration and SDK contract checks pass
+- [ ] No secrets in logs, fixtures, or repo
+- [ ] Docs and CHANGELOG updated
+- [ ] Committed on main and pushed
+
+## Sprint S3 — Usage logging and second provider (MVP, 0.1.0 checkpoint)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
 - Started / updated: 2026-11-20
 - State: complete
