@@ -2,7 +2,7 @@
 
 Plan for delivering the MVP, V1, V2 and V3 described in `product.md`, following the architecture in `architecture.md`. Milestones (M0–M11) come from `product.md`; later work maps to the feature sets in `product.md` §7.7 and §10. Sprints S1–S17 are grouped here with tasks, estimates, and acceptance criteria.
 
-The admin web app is scaffolded once in S6 and extended incrementally in every later sprint. Each sprint's UI work adds features to the same React app; there is no re-scaffolding.
+The admin web app is scaffolded in S1 (MVP) and wired to the real admin API in S6, then extended incrementally in every later sprint. Each sprint's UI work adds features to the same React app; there is no re-scaffolding.
 
 ## 1. Working agreement (solo, learning-focused)
 
@@ -36,12 +36,12 @@ The admin web app is scaffolded once in S6 and extended incrementally in every l
 
 | Sprint | Milestones | Version | Theme | Outcome |
 |--------|-----------|---------|-------|---------|
-| S1 | M0, M1 | MVP | Foundations | Workspace, mock provider, non-streaming passthrough |
+| S1 | M0, M1 | MVP | Foundations | Workspace, mock provider, non-streaming passthrough, React app scaffold |
 | S2 | M2, M3 | MVP | Streaming and auth | Streaming works; virtual keys protect the API |
 | S3 | M4, M5 | MVP | Observability and second provider | Usage logged; Anthropic adapter works |
 | S4 | M6, M7 | V1 | Routing and resilience | Aliases, pricing, retries, fallbacks |
 | S5 | M8, M9 | V1 | Control | Rate limits, budgets, admin API |
-| S6 | M10 | V1 | Admin web app | React app scaffolded; onboard a project from the UI |
+| S6 | M10 | V1 | Admin web app | React app wired to the admin API; onboard a project from the UI |
 | S7 | M11 | V1 | Hardening and release | Tests, Docker, docs; V1 shipped |
 | S8 | — | V2 | Metrics and tracing | Prometheus `/metrics`, OpenTelemetry traces, health refinements |
 | S9 | — | V2 | Exact-match caching | Cache with TTL, bypass header, cost savings visible |
@@ -82,9 +82,10 @@ Sprint task tables list the full identified scope (22–36 pts). Commit only ~16
 | 1.7 | Provider trait + OpenAI-compatible adapter (non-streaming) | 3 | Adapter passes tests against the mock provider |
 | 1.8 | `POST /v1/chat/completions` handler wired to the adapter | 3 | End-to-end works with the OpenAI Python SDK |
 | 1.9 | OpenAI-style error mapping (`ProviderError` to JSON) | 2 | Upstream 400/429/500 produce correct status and error body |
+| 1.10 | Vite + React + TS admin UI scaffold: router, Tailwind/shadcn base, test harness, mock API layer | 3 | Dev server runs; typecheck/lint/unit tests pass; no real credentials or admin endpoints used |
 
-**Total:** 22 pts (slightly over; drop 1.4 to S2 if needed)
-**Learning focus:** workspaces, tokio, serde, traits and `async_trait`, Arc shared state, `thiserror`.
+**Total:** 25 pts (slightly over; drop 1.4 to S2 if needed)
+**Learning focus:** workspaces, tokio, serde, traits and `async_trait`, Arc shared state, `thiserror`, frontend toolchain.
 **Risks:** fighting the borrow checker on shared state; mitigate by keeping state Arc-wrapped and immutable.
 
 ## Sprint 2 — Streaming and auth (M2, M3)
@@ -190,7 +191,7 @@ Stack decided and frozen: Vite + React + TypeScript SPA, TanStack Router and Que
 
 | # | Task | Pts | Acceptance criteria |
 |---|------|-----|---------------------|
-| 6.1 | Vite + React + TS setup, generated API client, login and session handling | 3 | Unauthenticated users redirected to login; client generated from the OpenAPI spec; CI drift check fails on a stale client |
+| 6.1 | Wire the scaffold to the generated API client, login and session handling | 2 | Unauthenticated users redirected to login; client generated from the OpenAPI spec; CI drift check fails on a stale client |
 | 6.2 | Projects and keys page (create, revoke, copy-once secret) | 5 | Secret visible only at creation |
 | 6.3 | Aliases and fallback chain editor | 5 | Reorder targets; changes apply immediately |
 | 6.4 | Providers and models pages (including pricing) | 3 | Test-connection button works |
@@ -201,7 +202,7 @@ Stack decided and frozen: Vite + React + TypeScript SPA, TanStack Router and Que
 | 6.9 | Serve built static assets from the Rust admin listener (`ServeDir`) | 2 | Same-origin requests on 8081; no CORS; one container |
 | 6.10 | Playwright smoke test: login, create project/key, dashboard | 3 | Runs in CI against the built app |
 
-**Total:** 36 pts (cut 6.8 first, then simplify 6.6; 5.11 must be done in S5)
+**Total:** 35 pts (cut 6.8 first, then simplify 6.6; 5.11 must be done in S5)
 **Learning focus:** the API as a product surface; keep UI minimal and functional.
 **Risks:** frontend polish consuming the sprint. Functional over pretty.
 
@@ -484,7 +485,7 @@ flowchart LR
 - Exact cache (S9) precedes semantic cache (S16); embeddings (S12) are required before semantic caching (S16).
 - Postgres (S14) precedes multi-instance (S15) and enables pgvector for S16.
 - S12 and S13 are independent of S14–S15 and can be swapped in order if priorities change.
-- The React app is scaffolded once in S6. Every later UI task depends only on the API shipped earlier in that sprint and extends the same app.
+- The React app is scaffolded in S1 (MVP) with a mock API layer; S6 replaces it with the generated client once the OpenAPI spec exists. Later UI tasks depend only on the API shipped earlier in that sprint and extend the same app.
 
 ## 4. Risk register
 

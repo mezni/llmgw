@@ -8,8 +8,12 @@ Self-hosted, OpenAI-compatible LLM gateway written in Rust, with a React admin a
 
 - [Product document](docs/product.md) — goals, features, scope, and roadmap.
 - [Architecture](docs/architecture.md) — crates, request lifecycle, data model, error model, and deployment.
+- [Data-plane API spec](docs/api-spec.md) — endpoints, fields, streaming, headers, and error contract.
+- [Provider compatibility](docs/provider-compatibility.md) — per-provider feature matrix and known quirks.
+- [Security](docs/security.md) — threat model, key handling, encryption, and logging rules.
 - [Sprint planning](docs/sprint-planning.md) — single S1–S17 plan for MVP through V3.
 - [Conventions](docs/conventions.md) — Rust and React standards, error handling, naming, testing, commits, and definition of done.
+- [Architecture decision records](docs/adr/) — one short record per significant choice.
 - [Changelog](CHANGELOG.md) — notable changes and planned releases.
 
 ## Stack
@@ -50,7 +54,7 @@ Dependency direction is one-way: `server → gateway/providers/admin-api → sto
 
 | Checkpoint | Sprint | Scope |
 |------------|--------|-------|
-| MVP | S3 | One project, own key, two providers, usage in SQL |
+| MVP | S3 | One project, own key, two providers, usage in SQL, React app scaffold |
 | V1 | S7 | Aliases, pricing, resilience, limits, admin API and React app, packaging |
 | V2 | S11 | Metrics/tracing, exact caching, guardrails, key rotation |
 | V3 | S17 | New endpoints, smart routing, Postgres, multi-instance, semantic caching |
@@ -94,7 +98,7 @@ curl http://localhost:8080/v1/chat/completions \
 | `cargo fmt --all -- --check` | Rust formatting |
 | `cargo clippy --all-targets -- -D warnings` | Rust lints |
 | `cargo test` | Unit, adapter, integration, and admin tests |
-| `npm run typecheck && npm run lint && npm test` | Frontend checks (once S6 lands) |
+| `npm run typecheck && npm run lint && npm test` | Frontend checks (once the S1 scaffold lands) |
 | `npm run e2e` | Playwright smoke flows (once S6 lands) |
 
 ## Contributing

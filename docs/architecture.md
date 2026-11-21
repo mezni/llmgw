@@ -144,7 +144,7 @@ pub enum ProviderError {
 
 ### 3.3 Provider registry
 
-An in-memory `HashMap<ProviderId, Arc<dyn Provider>>` built at startup and rebuilt on config reload (see section 8). Adapters hold their own `reqwest::Client` clone (cheap, shares the connection pool).
+An in-memory `HashMap<ProviderId, Arc<dyn Provider>>` built at startup and rebuilt on config reload (see section 8). Adapters hold their own `reqwest::Client` clone (cheap, shares the connection pool). See [provider-compatibility.md](provider-compatibility.md) for per-provider support.
 
 ## 4. Request lifecycle (data plane)
 
@@ -377,7 +377,7 @@ CREATE TABLE audit_log (
 
 ## 7. HTTP surfaces
 
-Data plane (port 8080): `POST /v1/chat/completions`, `GET /v1/models` (aliases visible to the caller), `GET /health`, `GET /ready`. Later versions add `POST /v1/messages` and `POST /v1/embeddings` (section 16).
+Data plane (port 8080): `POST /v1/chat/completions`, `GET /v1/models` (aliases visible to the caller), `GET /health`, `GET /ready`. The client-facing contract is specified in [api-spec.md](api-spec.md). Later versions add `POST /v1/messages` and `POST /v1/embeddings` (section 16).
 
 Control plane (admin API): resource-oriented REST, JSON, versioned under `/admin/v1`:
 
@@ -401,7 +401,7 @@ OpenAPI spec generated with `utoipa`. The admin UI client is generated from it (
 
 ### Admin web app
 
-Vite + TypeScript SPA: TanStack Router (or React Router), TanStack Query for server state and cache invalidation, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts for the usage dashboard, TanStack Table for the request log. Tests: Vitest + React Testing Library, plus Playwright smoke flows.
+Vite + TypeScript SPA: TanStack Router (or React Router), TanStack Query for server state and cache invalidation, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts for the usage dashboard, TanStack Table for the request log. Tests: Vitest + React Testing Library, plus Playwright smoke flows. The app is scaffolded in S1 (MVP) with a mock API layer; S6 wires in the generated client and real admin endpoints.
 
 The built static files are served by the admin listener itself (for example `tower-http`'s `ServeDir`), so requests are same-origin with no CORS and the whole system ships in one container. In development, `vite dev` proxies `/admin` to port 8081. The UI is reachable only on the admin listener (8081), never on the public data-plane port.
 
@@ -419,6 +419,8 @@ Two layers:
 - In-flight requests keep the snapshot they started with, so a config change never affects a request mid-flight.
 
 ## 9. Security
+
+See [security.md](security.md) for the threat model, key handling, and logging rules.
 
 | Concern | Approach |
 |---------|----------|

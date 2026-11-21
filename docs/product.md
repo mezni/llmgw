@@ -172,7 +172,7 @@ gateway/
 
 | Phase | Scope |
 |-------|-------|
-| MVP (M0–M5) | Workspace setup, passthrough to one provider, streaming, virtual keys, usage logging, Anthropic adapter |
+| MVP (M0–M5) | Workspace setup, passthrough to one provider, streaming, virtual keys, usage logging, Anthropic adapter, React admin UI scaffold |
 | V1 (M6–M11) | Aliases and pricing, retries and fallbacks, rate limits and budgets, admin API, admin web app, hardening and packaging |
 | V2 | Caching, guardrails, metrics and tracing, key rotation, audit-log views |
 | V3 | Semantic cache, A/B routing, `/v1/messages`, embeddings, Postgres |
