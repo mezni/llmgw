@@ -15,7 +15,7 @@ Log fields, metric names, dashboards, and alerts. The short design is in [archit
 | `alias` | string | Yes (data plane) | Client-facing model alias |
 | `provider_id`, `model` | string | Final target | Upstream provider and real model |
 | `status`, `http_status`, `error_kind` | string/int | Yes | Outcome and normalized error |
-| `latency_ms`, `ttft_ms` | int | On completion | Total time and time to first byte |
+| `latency_ms`, `ttft_ms` | int | On completion | Total time and time to first token |
 | `input_tokens`, `output_tokens`, `cached_tokens` | int | When reported | Normalized usage |
 | `cost_usd` | number | On completion | Computed from model pricing |
 | `attempts` | array | On completion | Per-attempt provider, outcome, latency |

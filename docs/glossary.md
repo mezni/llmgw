@@ -32,7 +32,7 @@ Terms used across the docs and code. Use these names in identifiers, API fields,
 | **Dynamic config** | DB-backed values changed through the admin API without a restart. |
 | **Master key** | `GATEWAY_MASTER_KEY`, the 32-byte key that encrypts provider credentials at rest. Never stored in the DB. |
 | **Log mode** | `off`, `metadata` (default), or `full`; only `full` stores prompt/response bodies. |
-| **TTFT** | Time to first byte of a streamed response. |
+| **TTFT** | Time to first token of a streamed response. |
 | **OpenAPI spec** | Generated machine-readable control-plane contract in [openapi.json](openapi.json); feeds the React client. |
 | **Data-plane spec** | Human-readable client contract in [api-spec.md](api-spec.md). |
 | **Fixture** | Scrubbed recorded payload used by adapter and contract tests. |

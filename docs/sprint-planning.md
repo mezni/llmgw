@@ -54,7 +54,7 @@ The admin web app is scaffolded in S1 (MVP) and wired to the real admin API in S
 | S16 | — | V3 | Semantic caching | Embedding-based cache with similarity threshold |
 | S17 | — | V3 | Hardening; V3 release | Load and chaos tests, docs, v0.4.0 |
 
-Sprint task tables list the full identified scope (22–36 pts). Commit only ~16 pts per sprint and treat the remainder as stretch or carryover, using the cut order in §5. Totals are not commitments.
+Sprint task tables list the full identified scope (22–37 pts). Commit only ~16 pts per sprint and treat the remainder as stretch or carryover, using the cut order in §5. Totals are not commitments.
 
 **Checkpoints:** MVP end of S3; V1 end of S7; V2 end of S11; V3 end of S17.
 
@@ -104,7 +104,7 @@ Sprint task tables list the full identified scope (22–36 pts). Commit only ~16
 | 2.6 | SQLite + sqlx setup, migrations: `projects`, `api_keys` | 3 | `sqlx migrate run` works; WAL mode enabled |
 | 2.7 | Key generation and hashing (`gw-<random>`, SHA-256, display prefix) | 2 | Secret shown once; only the hash is stored |
 | 2.8 | Auth middleware (tower layer) attaching `AuthContext` | 3 | Missing, invalid, and revoked keys return 401 with the correct error body |
-| 2.9 | CLI: `gateway key create/revoke/list --project` | 2 | Usable from the terminal against the DB |
+| 2.9 | CLI: `cargo run -p server -- key create/revoke/list --project` | 2 | Usable from the terminal against the DB |
 
 **Total:** 26 pts (stretch; prioritize 2.1–2.5 first, 2.6–2.9 can spill to S3)
 **Learning focus:** `futures::Stream`, backpressure, drop semantics for cancellation, sqlx, tower layers.
@@ -153,7 +153,7 @@ MVP checkpoint reached at the end of this sprint.
 | 4.9 | Per-route timeouts | 2 | Slow mock triggers timeout then fallback |
 | 4.10 | Circuit breaker per provider (closed, open, half-open) | 3 | Failing provider is skipped, then probed after cooldown |
 
-**Total:** 28 pts (stretch; 4.10 can slip to S5 or V2)
+**Total:** 28 pts (stretch; 4.10 can slip to S5, still within V1)
 **Learning focus:** ArcSwap, state machines, designing for failure, tower retry and timeout concepts.
 **Risks:** subtle retry semantics. Drive everything through mock-provider scenario tests.
 
@@ -201,8 +201,9 @@ Stack decided and frozen: Vite + React + TypeScript SPA, TanStack Router and Que
 | 6.8 | Playground to test an alias | 3 | Streams a response from the gateway |
 | 6.9 | Serve built static assets from the Rust admin listener (`ServeDir`) | 2 | Same-origin requests on 8081; no CORS; one container |
 | 6.10 | Playwright smoke test: login, create project/key, dashboard | 3 | Runs in CI against the built app |
+| 5.10 (carried) | Audit log for admin mutations | 2 | Every write produces an audit row |
 
-**Total:** 35 pts (cut 6.8 first, then simplify 6.6; 5.11 must be done in S5)
+**Total:** 37 pts (cut 6.8 first, then simplify 6.6; 5.11 must be done in S5)
 **Learning focus:** the API as a product surface; keep UI minimal and functional.
 **Risks:** frontend polish consuming the sprint. Functional over pretty.
 
@@ -306,10 +307,10 @@ Stack decided and frozen: Vite + React + TypeScript SPA, TanStack Router and Que
 |---|------|-----|---------------------|
 | 11.1 | Key rotation: create a successor key, keep the old one valid until a set expiry | 5 | Overlap window configurable; old key rejected afterward |
 | 11.2 | Last-used tracking per key (batched, not per request writes) | 2 | Visible in the admin UI without slowing the hot path |
-| 11.3 | Key expiry reminders: list of keys expiring soon, optional webhook | 2 | Endpoint and UI badge |
+| 11.3 | Key expiry reminders: list of keys expiring soon | 2 | Endpoint and UI badge; no external delivery channel |
 | 11.4 | Scoped admin roles (admin, read-only) enforced across endpoints | 3 | Read-only cannot mutate; tested |
 | 11.5 | Audit log views: filter by admin, action, target, time; diff of config changes | 3 | Before and after values stored for mutations |
-| 11.6 | Budget alerts: webhook or email at 80% and 100% thresholds | 3 | Fires once per threshold per period |
+| 11.6 | Budget alerts: dashboard/UI warnings at 80% and 100% thresholds | 3 | Visible in the UI once per threshold per period |
 | 11.7 | Admin UI updates for everything shipped in V2 | 5 | Metrics link, cache, guardrails, keys, audit; extends the existing React app |
 | 11.8 | V2 regression pass: integration, contract, and load tests re-run | 3 | No V1 behavior regressions |
 | 11.9 | Docs, changelog, migration notes, v0.3.0 tag, retro | 2 | Upgrade from V1 documented and tested |
@@ -519,8 +520,8 @@ V2 and V3:
 
 Cut in this order without breaking the MVP or the core value of the current version. UI work is incremental on the same React app; cut a feature's UI only with that feature.
 
-1. **MVP/V1:** playground (6.8), circuit breaker (4.10), tokens-per-minute limits (5.2), tool-call mapping (3.8), dashboard polish (6.6) and audit log UI.
-2. **V2:** Grafana dashboard (8.8), budget alert delivery channels (11.6), key expiry reminders (11.3), external moderation hook (10.7).
+1. **MVP/V1:** playground (6.8), tokens-per-minute limits (5.2), tool-call mapping (3.8), dashboard polish (6.6) and audit log UI.
+2. **V2:** Grafana dashboard (8.8), budget alert views (11.6), key expiry reminders (11.3), external moderation hook (10.7).
 3. **V3:** cross-provider translation (12.4), auto-halt canary (13.4), table partitioning (14.6), shared cache backend (15.5), shadow validation (16.6).
 
 **Never cut:** streaming correctness, key hashing, provider-credential encryption, usage logging, fallback logic, the OpenAPI spec (5.11) and generated client, project isolation in caches, redaction defaults that keep sensitive data out of logs, key-rotation overlap logic, migration verification.
@@ -538,13 +539,13 @@ Cut in this order without breaking the MVP or the core value of the current vers
 |----------|-----------|---------|--------|
 | Admin UI stack | S6 | React SPA vs. askama + HTMX | Decided: Vite + React + TS SPA served from the admin listener |
 | Admin auth | S5 | Cookie session vs. bearer token | Decided: HttpOnly, SameSite=Strict session cookie |
-| Default logging mode | S3 | Off / metadata (recommended) / full | Open |
+| Default logging mode | S3 | Off / metadata (recommended) / full | Decided: metadata |
 | Hosting target for the first real deployment | S7 | Local Docker vs. small VPS vs. Fly.io | Open |
-| Metrics label set | S8 | Minimal vs. extended | Open |
-| Cache default scope | S9 | Per project (recommended) vs. global | Open |
-| Redaction default | S10 | Log-only (recommended) vs. upstream too | Open |
-| Postgres strategy | S14 | Repository traits vs. runtime-selected sqlx backend | Open |
-| Shared state store | S15 | Redis vs. Postgres only | Open |
+| Metrics label set | S8 | Minimal vs. extended | Decided: low-cardinality set in [observability.md §2](observability.md#2-metrics) |
+| Cache default scope | S9 | Per project (recommended) vs. global | Decided: per project; sharing opt-in |
+| Redaction default | S10 | Log-only (recommended) vs. upstream too | Decided: log-only |
+| Postgres strategy | S14 | Repository traits vs. runtime-selected sqlx backend | Decided: repository traits |
+| Shared state store | S15 | Redis vs. Postgres only | Decided: Redis for limits/counters, Postgres for config/logs |
 | Vector index | S16 | pgvector vs. in-memory HNSW | Open |
 
 ## 8. Sprint ceremonies (lightweight, solo)

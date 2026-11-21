@@ -54,12 +54,12 @@ Settings in [config-reference.md §1–2](config-reference.md#1-environment-vari
 
 ## 5. Rotating the master key
 
-Provider credentials are encrypted with `GATEWAY_MASTER_KEY`. V1 rotates in place with a dual-read window; plan a short maintenance window.
+Provider credentials are encrypted with `GATEWAY_MASTER_KEY`. V1 supports dual-read rotation with an explicit re-encryption step; it is not zero-downtime, so plan a short maintenance window.
 
 1. Back up the database and record the old key securely.
 2. Set `GATEWAY_MASTER_KEY_PREVIOUS=<old key>` and `GATEWAY_MASTER_KEY=<new 32-byte base64 key>` in the environment.
 3. Restart. Decryption tries the new key first and falls back to the previous key; new writes use the new key.
-4. Run `cargo run --bin gateway -- rotate-keys` (or the packaged `gateway rotate-keys`). It re-encrypts every `providers.credentials_enc` row and reports counts; it is idempotent.
+4. Run `cargo run -p server -- rotate-keys`. It re-encrypts every `providers.credentials_enc` row and reports counts; it is idempotent.
 5. Verify zero failures, run a provider test from the admin UI, and take a fresh backup.
 6. Remove `GATEWAY_MASTER_KEY_PREVIOUS`, restart, and confirm all providers still work.
 

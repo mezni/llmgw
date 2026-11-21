@@ -63,7 +63,7 @@ Domain components are pure and receive data through props or hooks. Only `featur
 - **Server state:** TanStack Query owns all remote data. Query keys are structured as `[resource, filters]` (for example `['requests', { projectId, status, cursor }]`). Mutations invalidate the affected keys and trigger a refetch; no manual cache copying.
 - **URL state:** filters, pagination cursor, time range, and selected request live in search params via TanStack Router so views are shareable and survive reload.
 - **Form state:** React Hook Form with Zod resolvers. Schemas are derived from generated API types where possible; error messages come from the API `details` map when validation fails.
-- **Session state:** a small `useSession` hook backed by a `GET /admin/v1/…` bootstrap query (or the login response). It is memory-only; nothing sensitive is written to `localStorage` or `sessionStorage`.
+- **Session state:** a small `useSession` hook seeded from the login response and validated by the first protected query's 401; there is no separate bootstrap endpoint in V1. It is memory-only; nothing sensitive is written to `localStorage` or `sessionStorage`.
 - **Ephemeral UI state:** local `useState` for dialogs, drawers, and the playground message list. No Redux, no global mutable store.
 
 A created key's secret is held only in the component state of `SecretReveal` for the lifetime of that dialog. Closing or navigating away discards it; a later list fetch cannot bring it back.

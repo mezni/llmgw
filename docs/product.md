@@ -146,7 +146,8 @@ gateway/
 │   ├── providers/   # Provider trait and adapters
 │   ├── gateway/     # data plane
 │   ├── admin-api/   # control plane
-│   └── storage/     # sqlx models and migrations
+│   ├── storage/     # sqlx models and migrations
+│   └── server/      # binary: config, wiring, startup, shutdown
 └── admin-ui/
 ```
 

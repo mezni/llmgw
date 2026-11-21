@@ -32,17 +32,18 @@ admin-ui/src/
 ├── main.tsx, App.tsx        app bootstrap and router
 ├── routes/                  route components (thin; delegate to features)
 ├── features/<name>/         components, hooks, and tests for one feature
+├── features/api/            query-key factories and API error parsing
+├── features/auth/           session helpers
 ├── components/ui/           shadcn/ui primitives — generated, do not hand-edit
-├── lib/api/                 generated client from the OpenAPI spec — never edit manually
-├── lib/query/               query-key factories and QueryClient setup
-├── lib/auth/                session helpers
+├── api/                     generated client from the OpenAPI spec — never edit manually
+├── lib/                     formatters, date helpers, error parsing
 └── test/                    test setup and fixtures
 ```
 
 Rules:
 
 - Organize by feature, not by file type. A feature owns its components, hooks, schemas, and tests.
-- The API client is generated (`openapi-typescript` + `openapi-fetch`, or Orval). CI regenerates it and fails on drift; never patch generated files by hand.
+- The API client is generated (`openapi-typescript` + `openapi-fetch`). CI regenerates it and fails on drift; never patch generated files by hand.
 - Route components only read route params and render feature components. No data fetching or business rules in routes.
 - Keep shared primitives in `components/ui/`; add app-specific composition in `features/<name>/`.
 
@@ -102,7 +103,7 @@ Other rules:
 
 ### React
 
-- Treat any non-2xx response as an error; centralize extraction of `error.message`, `type`, and `code` in `lib/api`.
+- Treat any non-2xx response as an error; centralize extraction of `error.message`, `type`, and `code` in `api/client.ts`.
 - Show a readable message and a retry action where the operation is safe. Never render raw stack traces or upstream bodies.
 - On 401, redirect to login. On 403, explain that the key or alias is not permitted. On 429, show `Retry-After` when present.
 - Form errors come from Zod validation; server-side rejections are mapped back to fields when possible.
@@ -112,7 +113,7 @@ Other rules:
 
 - TypeScript `strict` mode; no `any`. Use `unknown` plus narrowing for untrusted data.
 - Functional components and hooks only. All server state lives in TanStack Query — no `useEffect` fetch loops, no hand-rolled cache in component state.
-- After every mutation, invalidate the affected query keys through the shared factories in `lib/query`.
+- After every mutation, invalidate the affected query keys through the shared factories in `features/api`.
 - Define forms with React Hook Form and Zod; reuse schemas between client and server-side validation where practical.
 - Keep business rules out of JSX: extract them into hooks or pure functions in the feature folder.
 - Use shadcn/ui primitives and Tailwind utilities; avoid ad-hoc CSS files. Keep colors and spacing on design tokens.

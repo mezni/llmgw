@@ -52,7 +52,7 @@ Security model for the gateway. The short control summary lives in [architecture
 - Provider credentials use AES-256-GCM (`aes-gcm`) with a master key from `GATEWAY_MASTER_KEY`. The master key is never stored in the database or committed to the repo.
 - The SQLite database lives on a mounted volume; backups use `sqlite3 .backup` or Litestream and must be protected at least as strongly as the volume.
 - Full prompt/response logging is off by default. When enabled per project, those rows contain plaintext content and require the same care as the volume.
-- V1 does not rotate the master key in place; changing it requires re-encrypting provider credentials. Document that as an operational procedure before enabling it in production.
+- V1 does not rotate the master key with zero downtime; changing it requires re-encrypting provider credentials through a short maintenance window ([operations.md §5](operations.md#5-rotating-the-master-key)).
 - V2 guardrails add redaction modes; log-only redaction is the default and matched sensitive content is never stored.
 
 ## 5. Plane separation and network

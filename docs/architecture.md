@@ -46,7 +46,7 @@ Two planes, one process (initially):
 |------|-----------|---------------|
 | Purpose | Serve LLM traffic | Configure and observe the gateway |
 | Callers | Projects | Admin web app, CLI |
-| Auth | Virtual API keys | Admin login / admin token |
+| Auth | Virtual API keys | Admin login / session cookie |
 | Traffic | High volume, latency-sensitive, streaming | Low volume, CRUD and queries |
 | Port | 8080 | 8081 (separate listener) |
 
@@ -102,7 +102,7 @@ pub struct ChatRequest {
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
-    pub cached_input_tokens: Option<u32>,
+    pub cached_tokens: Option<u32>,
 }
 
 pub struct ChatChunk {
@@ -243,7 +243,7 @@ flowchart LR
     H[Handlers] -- "try_send" --> Q[(bounded mpsc)]
     Q --> W[Writer task batch every N events or T ms]
     W --> DB[(SQLite)]
-    W -- "update" --> S[In-memory spend counters]
+    H -- "add cost on request path, before enqueue" --> S[In-memory spend counters]
 ```
 
 - Handlers use `try_send`. If the channel is full, the event is dropped and a metric is incremented. Logging must never add latency or cause a request to fail.
@@ -397,13 +397,13 @@ Admin auth: email and password with a session cookie (HttpOnly, SameSite=Strict)
 
 Every mutating call writes an `audit_log` row.
 
-OpenAPI spec generated with `utoipa`. The admin UI client is generated from it (`openapi-typescript` + `openapi-fetch`, or Orval); CI regenerates the client and fails the build on drift, so the OpenAPI task (5.11) is a hard dependency for the UI sprint.
+OpenAPI spec generated with `utoipa`. The admin UI client is generated from it (`openapi-typescript` + `openapi-fetch`); CI regenerates the client and fails the build on drift, so the OpenAPI task (5.11) is a hard dependency for the UI sprint.
 
 ### Admin web app
 
-Vite + TypeScript SPA: TanStack Router (or React Router), TanStack Query for server state and cache invalidation, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts for the usage dashboard, TanStack Table for the request log. Tests: Vitest + React Testing Library, plus Playwright smoke flows. The app is scaffolded in S1 (MVP) with a mock API layer; S6 wires in the generated client and real admin endpoints.
+Vite + TypeScript SPA: TanStack Router, TanStack Query for server state and cache invalidation, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts for the usage dashboard, TanStack Table for the request log. Tests: Vitest + React Testing Library, plus Playwright smoke flows. The app is scaffolded in S1 (MVP) with a mock API layer; S6 wires in the generated client and real admin endpoints.
 
-The built static files are served by the admin listener itself (for example `tower-http`'s `ServeDir`), so requests are same-origin with no CORS and the whole system ships in one container. In development, `vite dev` proxies `/admin` to port 8081. The UI is reachable only on the admin listener (8081), never on the public data-plane port.
+The built static files are served by the admin listener itself (for example `tower-http`'s `ServeDir`), so requests are same-origin with no CORS and the whole system ships in one container. In development, `vite dev` proxies `/admin/v1` to port 8081. The UI is reachable only on the admin listener (8081), never on the public data-plane port.
 
 ## 8. Configuration and hot reload
 
@@ -530,5 +530,5 @@ Graceful shutdown on SIGTERM: stop accepting connections, let in-flight streams 
 - **Caching:** a layer keyed on a hash of the normalized request; bypass via header.
 - **Native `/v1/messages`:** a second route that translates Anthropic-format requests into `ChatRequest` and back.
 - **Embeddings:** extend `Provider` with `embed` and add `POST /v1/embeddings` with alias resolution and input-token pricing.
-- **Postgres:** swap the sqlx backend feature and adjust migrations; repositories hide the database from the rest of the code.
+- **Postgres:** swap the storage implementation behind repository traits and add a parallel migration set; repositories hide the database from the rest of the code.
 - **Multi-instance:** move rate limiting and spend counters to a shared store such as Redis.

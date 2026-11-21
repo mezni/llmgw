@@ -10,7 +10,7 @@ The admin app needs forms for projects, keys, aliases, providers, pricing, and l
 
 ## Decision
 
-Build a Vite + TypeScript React SPA using TanStack Router and Query, shadcn/ui with Tailwind, React Hook Form with Zod, Recharts, and TanStack Table. Generate the client from the `utoipa` OpenAPI spec (`openapi-typescript` + `openapi-fetch`, or Orval) and fail CI when regenerated output drifts. Authenticate with the admin API's HttpOnly, SameSite=Strict session cookie, never storing tokens in `localStorage`. Serve the built assets from the admin listener with `tower-http`'s `ServeDir`; use a Vite dev proxy in development. Write a multi-stage Dockerfile that builds the frontend and the Rust binary into one image.
+Build a Vite + TypeScript React SPA using TanStack Router and Query, shadcn/ui with Tailwind, React Hook Form with Zod, Recharts, and TanStack Table. Generate the client from the `utoipa` OpenAPI spec (`openapi-typescript` + `openapi-fetch`) and fail CI when regenerated output drifts. Authenticate with the admin API's HttpOnly, SameSite=Strict session cookie, never storing tokens in `localStorage`. Serve the built assets from the admin listener with `tower-http`'s `ServeDir`; use a Vite dev proxy in development. Write a multi-stage Dockerfile that builds the frontend and the Rust binary into one image.
 
 ## Alternatives considered
 
