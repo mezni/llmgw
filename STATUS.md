@@ -205,4 +205,4 @@ Committed scope: 18 pts (1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 1.8). The sprint table li
 | Sprint | Version | State | Commit / tag | Notes |
 |--------|---------|-------|--------------|-------|
 | S1 | MVP | complete | 0d38952 | Foundations: data plane vertical slice |
-| S2 | MVP | complete | 07e7419 | Streaming correctness; auth slice deferred to S3 |
+| S2 | MVP | complete | 2c4daa8..41b12a8 | Streaming correctness; auth slice deferred to S3 |

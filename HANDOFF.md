@@ -3,7 +3,7 @@
 - Date: 2026-11-20
 - Sprint / version: S2 / MVP (targeting 0.1.0)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
-- HEAD commit: 07e7419 (sprint closeout)
+- S2 closeout commit: 41b12a8 (use `git rev-parse HEAD` for any later commits)
 - Push status: pushed to origin/main
 - State: complete
 
