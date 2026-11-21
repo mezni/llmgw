@@ -2,7 +2,7 @@
 
 Self-hosted, OpenAI-compatible LLM gateway written in Rust, with a React admin app. Provider keys stay in the gateway; projects get revocable virtual keys, aliases, limits, retries, and per-request usage and cost tracking.
 
-> **Status: design phase.** This repository currently contains the product, architecture, and sprint documents. Implementation lands in S1–S7; the commands below describe the target setup.
+> **Status: S1 foundations.** A Rust workspace with a non-streaming OpenAI-compatible data plane is implemented. Streaming, virtual-key auth, usage logging, and the admin API/UI land in S2–S7; the target setup below describes the finished system.
 
 ## Documentation
 
@@ -74,6 +74,24 @@ Dependency direction is one-way: `server → gateway/providers/admin-api → sto
 - Rust stable with `rustfmt` and `clippy`, plus `sqlx-cli` for migrations.
 - Node 20+ with npm.
 - Docker and docker-compose; Caddy terminates TLS in front of the gateway.
+
+## Development (S1)
+
+```bash
+cargo build
+cargo test
+cargo run -p server
+```
+
+With no `GATEWAY_UPSTREAM_BASE_URL` set, the server starts an in-process mock provider and the data plane accepts a normal Chat Completions request:
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"fast","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+Point at a real OpenAI-compatible upstream with `GATEWAY_UPSTREAM_BASE_URL` and `GATEWAY_UPSTREAM_API_KEY`. S1 has no virtual-key auth yet, so do not expose the listener publicly. `GET /health` returns `{"status":"ok"}` and every response carries `X-Request-Id`. Streaming (`stream: true`) arrives in S2.
 
 ## Development (target)
 

@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/providers",
+    "crates/storage",
+    "crates/gateway",
+    "crates/server",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+gateway-core = { path = "crates/core" }
+providers = { path = "crates/providers" }
+storage = { path = "crates/storage" }
+gateway = { path = "crates/gateway" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"

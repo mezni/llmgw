@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- Rust workspace with `core`, `providers`, `storage`, `gateway`, and `server` crates following the documented dependency direction.
+- Axum data plane with `GET /health`, JSON tracing logs, request IDs on responses and log lines, and configurable TOML/environment settings.
+- Normalized chat types with serde fixtures, an OpenAI-compatible adapter, and an in-process mock provider with `ok`, `delay`, `429`, and `500` scenarios.
+- `POST /v1/chat/completions` with OpenAI-shaped errors and an end-to-end smoke test using the official Python SDK.
 - Product document: goals, features, scope, users, and roadmap.
 - Architecture document: crates, request lifecycle, usage logging, data model, error model, security, testing, and deployment.
 - Data-plane API specification: endpoints, supported fields, pass-through rules, SSE format, headers, and error contract.

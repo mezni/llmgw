@@ -22,6 +22,8 @@ Precedence is **environment → TOML → built-in default**. Secrets are never w
 | `GATEWAY_LOG_MODE` | `metadata` | `off`, `metadata`, or `full` (see [security.md §6](security.md#6-logging-rules)) | Yes |
 | `GATEWAY_DEFAULT_TIMEOUT_MS` | `30000` | Upstream timeout when no provider/alias override exists | Yes |
 | `GATEWAY_MAX_BODY_BYTES` | `1048576` | Request body limit (1 MiB) | Yes |
+| `GATEWAY_UPSTREAM_BASE_URL` | unset | OpenAI-compatible upstream base URL; when unset, S1 starts an in-process mock provider | Yes |
+| `GATEWAY_UPSTREAM_API_KEY` | unset | Credential sent to that upstream; not needed for the mock | Yes |
 | `GATEWAY_LOG_RETENTION_DAYS` | `90` | `requests` metadata retention | Yes (job rereads on next tick) |
 | `GATEWAY_BODY_RETENTION_DAYS` | `7` | `request_body` / `response_body` retention in full mode | Yes (job rereads on next tick) |
 | `GATEWAY_AUDIT_RETENTION_DAYS` | `365` | `audit_log` retention | Yes (job rereads on next tick) |

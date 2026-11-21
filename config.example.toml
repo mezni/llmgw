@@ -1,0 +1,15 @@
+[server]
+data_listen = "0.0.0.0:8080"
+admin_listen = "127.0.0.1:8081"
+
+[database]
+url = "sqlite://./gateway.db"
+
+[logging]
+mode = "metadata"
+level = "info"
+json = true
+
+[limits]
+default_timeout_ms = 30000
+max_body_bytes = 1048576
