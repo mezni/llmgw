@@ -4,6 +4,8 @@ Every setting the gateway reads, its default, and whether changing it requires a
 
 Precedence is **environment → TOML → built-in default**. Secrets are never written in TOML: the file may name an environment variable, but the value is supplied by the runtime. Never commit `.env` files.
 
+> Current S1–S3 implementation: this reference describes the target V1 surface. The local mock-only gateway does not require `GATEWAY_MASTER_KEY` or the bootstrap admin variables; data-plane auth uses the CLI-managed virtual keys in §5. Admin API/UI configuration sections remain planned work.
+
 ## 1. Environment variables
 
 | Variable | Default | Purpose | Restart? |
@@ -117,3 +119,15 @@ The process refuses to start when:
 - A TOML file is present but malformed.
 
 Warnings (not failures) are emitted for unknown keys, unset bootstrap credentials after the first run, and V2 settings supplied on a V1 build.
+
+## 5. Current CLI key management (S1–S3)
+
+Virtual keys are stored in SQLite as SHA-256 hashes with a display prefix; the full secret is printed once at creation.
+
+```bash
+cargo run -p server -- key create --project NAME
+cargo run -p server -- key list --project NAME
+cargo run -p server -- key revoke --project NAME --key-id ID
+```
+
+Use the printed secret as `Authorization: Bearer <secret>` on `/v1/*` data-plane requests. `/health` and `/ready` do not require a key.

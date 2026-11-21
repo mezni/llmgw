@@ -3,7 +3,7 @@
 ## Current work: S1–S3 deferred sweep (MVP backlog)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
 - Started / updated: 2026-11-20
-- State: in progress
+- State: complete
 - Scope: all 28 pts of deferred S1–S3 work, approved by the user; no further deferral from this set.
 
 This is a backlog-clearing pass, not a new numbered sprint and not a version checkpoint. It closes tasks carried from S1 (1.4, 1.9, 1.10), S2 (2.6–2.9), and S3 (3.5, 3.7, 3.8). The 0.1.0 release already exists in CHANGELOG.md; new work goes under `[Unreleased]`. No control-plane API changes are in scope, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` remain unchanged.
@@ -11,15 +11,15 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 ### Task plan
 | Id | Task | Pts | State | Evidence |
 |----|------|-----|-------|----------|
-| 1.4 | CI: fmt, clippy, test on push | 2 | planned | workflow file; local reproduction of every CI step |
-| 1.9 | Full upstream error matrix | 2 | planned | provider error tests cover 400/401/403/408/413/429/5xx/network/timeout/stream |
+| 1.4 | CI: fmt, clippy, test on push | 2 | done | `.github/workflows/ci.yml`; local reproduction of every CI step |
+| 1.9 | Full upstream error matrix | 2 | done | provider/gateway error tests cover 400/401/403/408/413/429/5xx/network/timeout/stream with sanitized bodies |
 | 1.10 | Vite + React + TS admin UI scaffold | 3 | done | dev server smoke, typecheck, lint, unit tests, build, and mock-only API pass |
-| 2.6 | SQLite + sqlx setup, migrations: `projects`, `api_keys` | 3 | planned | migration test asserts both tables, WAL-enabled connection, indexes |
-| 2.7 | Key generation and hashing (`gw-<random>`, SHA-256, display prefix) | 2 | planned | secret shown once; DB stores hash/prefix only |
-| 2.8 | Auth middleware attaching `AuthContext` | 3 | planned | missing/invalid/revoked/expired keys return documented 401 body |
-| 2.9 | CLI: `key create/revoke/list --project` | 2 | planned | CLI tests or scripted smoke against a temp DB |
-| 3.5 | Graceful shutdown draining requests and log channel | 3 | planned | SIGTERM test shows no lost usage events |
-| 3.7 | Anthropic streaming event translation | 5 | planned | fragmented SSE fixture maps events to `ChatChunk`; gateway SSE smoke |
+| 2.6 | SQLite + sqlx setup, migrations: `projects`, `api_keys` | 3 | done | migration test asserts both tables, WAL-enabled connection, indexes |
+| 2.7 | Key generation and hashing (`gw-<random>`, SHA-256, display prefix) | 2 | done | CLI smoke shows secret once; DB stores hash/prefix only |
+| 2.8 | Auth middleware attaching `AuthContext` | 3 | done | missing/invalid/revoked/expired keys return documented 401 body; integration tests pass |
+| 2.9 | CLI: `key create/revoke/list --project` | 2 | done | CLI smoke against a temp DB; list shows prefix only |
+| 3.5 | Graceful shutdown draining requests and log channel | 3 | done | `graceful_shutdown_drains_all_usage_events` observes all rows |
+| 3.7 | Anthropic streaming event translation | 5 | done | fragmented SSE fixture maps events to `ChatChunk`; gateway SSE smoke passes |
 | 3.8 | Tool-call mapping between formats | 3 | done | OpenAI/Anthropic tool round-trip tests and streamed tool-fragment tests pass |
 
 ### Detailed task cards
@@ -77,16 +77,16 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 ### Verification
 | Check | Command | Result |
 |-------|---------|--------|
-| Format | `cargo fmt --all -- --check` | pending |
-| Lint | `cargo clippy --offline --all-targets -- -D warnings` | pending |
-| Rust tests | `cargo test --offline` | pending |
-| Build | `cargo build --offline` | pending |
+| Format | `cargo fmt --all -- --check` | pass |
+| Lint | `cargo clippy --offline --all-targets -- -D warnings` | pass |
+| Rust tests | `cargo test --offline` | pass — 79 tests |
+| Build | `cargo build --offline` | pass |
 | Frontend | `npm run typecheck && npm run lint && npm test` in `admin-ui` | pass — 3 tests; build and dev-server smoke also pass |
-| OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pending |
-| Migration | fresh `sqlx migrate run` + schema/pragmas check | pending |
-| E2E | `npm run e2e` in `admin-ui` | pending |
-| SDK contract | OpenAI Python SDK non-streaming + streaming smoke | pending |
-| Security | secret-pattern scan | pending |
+| OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pass (exit 0) |
+| Migration | fresh `sqlx migrate run` + schema check | pass — `projects`, `api_keys`, `requests`, indexes; WAL asserted by storage test |
+| E2E | `npm run e2e` in `admin-ui` | not applicable — Playwright flows are S6 |
+| SDK contract | OpenAI Python SDK non-streaming + streaming smoke | pass — `echo: Hello` / `Hello` |
+| Security | secret-pattern scan | pass — no matches outside fixtures/mock/docs |
 
 ### Decisions and deviations
 - All deferred S1–S3 work is in scope by explicit user choice; no deferred item from this set is cut.
@@ -103,14 +103,14 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 - None.
 
 ### Definition of done
-- [ ] Acceptance criteria met for all committed tasks
-- [ ] fmt, clippy, tests pass
-- [ ] Frontend typecheck, lint, unit tests pass
-- [ ] OpenAPI/client drift check passes
-- [ ] Migration and SDK contract checks pass
-- [ ] No secrets in logs, fixtures, or repo
-- [ ] Docs and CHANGELOG updated
-- [ ] Committed on main and pushed
+- [x] Acceptance criteria met for all committed tasks
+- [x] fmt, clippy, tests pass
+- [x] Frontend typecheck, lint, unit tests pass
+- [x] OpenAPI/client drift check passes
+- [x] Migration and SDK contract checks pass
+- [x] No secrets in logs, fixtures, or repo
+- [x] Docs and CHANGELOG updated
+- [x] Committed on main and pushed
 
 ## Sprint S3 — Usage logging and second provider (MVP, 0.1.0 checkpoint)
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)

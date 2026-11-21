@@ -47,13 +47,21 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- CI workflow covering Rust format/clippy/test/build, migrations, frontend checks, OpenAPI drift, and secret scanning.
+- SQLite virtual-key support: `projects`, hashed `api_keys`, key repository, auth middleware, and `key create/list/revoke --project` CLI commands.
+- Anthropic streaming translation: `message_start`, `content_block_*`, `message_delta`, `message_stop`, fragmented SSE fixtures, and gateway SSE smoke coverage.
 - Tool-call mapping between OpenAI and Anthropic formats: tool definitions, assistant calls, tool results, and streamed argument fragments.
 - Vite + React + TypeScript admin UI scaffold with local mock data, accessible layout, dashboard/projects/keys pages, and Vitest coverage.
 
 ### Changed
 
 - Provider compatibility now marks Anthropic streaming and tool calling as supported.
-- Admin UI documentation now distinguishes the mock-only MVP scaffold from the planned S6 generated-client stack.
+- README, config/operations/admin UI docs, and test plan now reflect virtual-key auth, the CLI, mock-only UI development, and deferred-sweep status.
+- Usage logging closes and flushes its channel on SIGTERM so no events are lost during graceful shutdown.
+
+### Fixed
+
+- Normalized the upstream error matrix across OpenAI and Anthropic adapters and gateway error mapping without echoing hostile upstream bodies.
 
 ## Planned releases
 

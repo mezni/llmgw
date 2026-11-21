@@ -1,67 +1,63 @@
 # Session handoff
 
 - Date: 2026-11-20
-- Sprint / version: S3 / MVP (0.1.0 checkpoint)
+- Sprint / version: S1–S3 deferred sweep / Unreleased
 - Branch: main (sprints run directly on main per MASTER_PROMPT.md)
-- S3 commits: 2998432, 8d18abc, and the S3 closeout commit at `HEAD`
+- Commits: `6fb5561`, `b67ed42`, `0452762`, `2e1bc45`, `c813b73`, `a425a2e`, and the final closeout commit at `HEAD`
 - Push status: pushed to origin/main
 - State: complete
 
 ## Completed this session
-- Added the `requests` SQLite schema with project/key/alias/time/status indexes and an integer-prefixed `0001_init.sql` migration.
-- Added `UsageEvent`, bounded `UsageLog::try_send` logging, and a background `UsageWriter` that flushes by batch size or interval.
-- Tapped provider streams for TTFT and final usage; dropped streams emit `client_cancelled`, upstream stream errors emit `error`.
-- Added `ProviderError::kind()` and shared `parse_retry_after`; OpenAI adapter now uses the shared parser.
-- Added a non-streaming Anthropic Messages adapter: system extraction, `max_tokens` default 1024, role validation, text/cache usage mapping, and sanitized errors.
-- Added temporary model-name provider selection (`claude*` → Anthropic when `GATEWAY_ANTHROPIC_API_KEY` is set; other models → OpenAI-compatible provider).
-- Updated config, provider compatibility, data model, test plan, observability, README, ADR 0004, STATUS.md, CHANGELOG.md, and this handoff.
+- Cleared all 28 points of deferred S1–S3 work with no cuts: 1.4, 1.9, 1.10, 2.6–2.9, 3.5, 3.7, and 3.8.
+- Added a CI workflow covering Rust fmt/clippy/test/build, sqlx migration, schema checks, frontend typecheck/lint/test/build, OpenAPI drift, and gitleaks.
+- Normalized the upstream error matrix for 400/401/403/408/413/429/5xx/network/timeout/stream with sanitized bodies and `Retry-After` handling.
+- Added SQLite virtual keys: projects, hashed API keys with display prefixes, active-key lookup, revocation, expiry filtering, auth middleware, and `key create/list/revoke --project` CLI commands.
+- Added data-plane auth via `Authorization: Bearer ...`, documented 401 bodies, and usage rows keyed by real project/key IDs.
+- Added graceful shutdown that closes the usage channel and flushes the batch writer on SIGTERM/Ctrl-C.
+- Added Anthropic SSE streaming translation: `message_start`, `content_block_*`, `message_delta`, `message_stop`, fragmented frames, cut streams, sanitized errors, and gateway SSE smoke coverage.
+- Added OpenAI ↔ Anthropic tool-call mapping for definitions, assistant tool calls, tool results, and streamed argument fragments.
+- Added a Vite + React + TypeScript admin UI scaffold with `react-router-dom`, local CSS primitives, local mock data, accessible layout, dashboard/projects/keys pages, and Vitest coverage.
+- Updated README, CHANGELOG, STATUS, HANDOFF, admin UI docs, provider compatibility, config/operations docs, test plan, and provider docs in the same deferred sweep.
 
 ## Test evidence
 - `cargo fmt --all -- --check`: pass
 - `cargo clippy --offline --all-targets -- -D warnings`: pass
-- `cargo test --offline`: pass — 52 tests (12 gateway integration, 6 gateway unit, 10 core, 16 provider, 5 config, 3 storage)
+- `cargo test --offline`: pass — 79 tests
 - `cargo build --offline`: pass
-- Fresh `sqlx migrate run --source crates/storage/migrations` against `target/migration-test-s3.db`: `1/migrate init`; `requests` columns and 4 indexes verified
+- Frontend `npm ci --offline`, `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`: pass — 3 tests
+- Vite dev server smoke: pass — HTTP 200 and expected page title
 - `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts`: pass (exit 0)
-- OpenAI Python SDK 3.24.0 non-streaming and streaming smoke against local gateway: pass (`echo: Hello` / `Hello`)
-- Secret-pattern scan: pass (no matches outside fixtures/mock/docs)
+- Fresh `sqlx migrate run --source crates/storage/migrations`: pass — `projects`, `api_keys`, `requests`, indexes verified; WAL asserted by the storage test
+- OpenAI Python SDK 3.24.0 non-streaming + streaming smoke against a local gateway with a generated key: pass (`echo: Hello` / `Hello`)
+- Secret-pattern scan: pass — no matches outside fixtures/mock/docs
 
 ## Files changed
-- `Cargo.lock`, `README.md`, `STATUS.md`, `CHANGELOG.md`, `HANDOFF.md`
-- `docs/adr/0004-aliases-over-model-names.md`, `docs/config-reference.md`, `docs/data-model.md`, `docs/observability.md`, `docs/provider-compatibility.md`, `docs/test-plan.md`
-- `crates/core/src/usage.rs`, `crates/core/src/lib.rs`
-- `crates/storage/Cargo.toml`, `crates/storage/migrations/0001_init.sql`, `crates/storage/src/lib.rs`, `crates/storage/src/usage.rs`
-- `crates/providers/Cargo.toml`, `crates/providers/src/anthropic.rs`, `crates/providers/src/error.rs`, `crates/providers/src/lib.rs`, `crates/providers/src/mock.rs`, `crates/providers/src/openai.rs`, `crates/providers/tests/fixtures/providers/anthropic/message-response.json`
-- `crates/gateway/Cargo.toml`, `crates/gateway/src/lib.rs`, `crates/gateway/src/provider_registry.rs`, `crates/gateway/src/router.rs`, `crates/gateway/src/routes/chat.rs`, `crates/gateway/src/usage.rs`, `crates/gateway/tests/chat.rs`
-- `crates/server/Cargo.toml`, `crates/server/src/config.rs`, `crates/server/src/main.rs`
+- `.github/workflows/ci.yml`, `CHANGELOG.md`, `HANDOFF.md`, `README.md`, `STATUS.md`
+- `docs/admin-ui.md`, `docs/config-reference.md`, `docs/operations.md`, `docs/provider-compatibility.md`, `docs/test-plan.md`
+- `crates/providers/src/error.rs`, `crates/providers/src/openai.rs`, `crates/providers/src/anthropic.rs`, `crates/providers/src/mock.rs`, provider fixtures
+- `crates/gateway/src/error.rs`, `crates/gateway/src/auth.rs`, `crates/gateway/src/router.rs`, `crates/gateway/src/routes/chat.rs`, `crates/gateway/src/usage.rs`, `crates/gateway/tests/chat.rs`
+- `crates/storage/src/keys.rs`, `crates/storage/src/keys/repository.rs`, `crates/storage/src/lib.rs`, `crates/storage/src/usage.rs`
+- `crates/server/src/main.rs`, `crates/server/tests/shutdown.rs`, `Cargo.lock`
+- `admin-ui/**` (Vite/React/TS scaffold, lockfile, mock API, tests, CSS primitives)
 
 ## Deferred / carryover
-- 3.7 — Anthropic streaming event translation; Anthropic streaming returns `400 unsupported_field` until this lands.
-- 3.8 — Tool-call mapping between formats; Anthropic tools return `400 unsupported_field` until this lands.
-- 3.5 — Graceful shutdown that drains requests and the log channel.
-- 2.6–2.9 — S2 auth spill (SQLite keys, hashing, middleware, CLI); user-approved deferral, key hashing remains mandatory when the slice lands.
-- 1.4 — CI pipeline; carried from S1.
-- 1.9 — Full upstream error matrix; carried from S1.
-- 1.10 — UI scaffold; carried from S1.
+- None from S1–S3 after this pass.
+- Future sprint work (S4–S17) remains out of scope.
 
 ## Open decisions and risks
-- Committed exactly 18 pts (3.1–3.4, 3.6, 3.9) with user approval.
-- Key hashing (2.7) is deferred a second time, a documented deviation from the "Never cut" rule.
-- With no virtual keys yet, usage rows use local placeholders `local` / `local-key`; do not expose the listener publicly.
-- Model selection is temporary and will be replaced by aliases in S4; see ADR 0004.
+- Model-name routing (`claude*` → Anthropic when `GATEWAY_ANTHROPIC_API_KEY` is set) is still temporary until aliases land in S4.
+- No control-plane change was made; `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` were intentionally left unchanged.
+- The admin UI scaffold uses local mock data only; real admin endpoints, generated OpenAPI client, TanStack Query/Router, shadcn/ui, and Playwright flows remain S6 work.
 - `cost_usd` and `attempts` remain null until pricing and retry layers land.
-- No control-plane change, so `docs/openapi.json` and `admin-ui/src/api/schema.d.ts` were intentionally left unchanged.
 
 ## Gotchas for the next session
-- `cargo run -p server` uses the in-process mock when `GATEWAY_UPSTREAM_BASE_URL` is unset; it now also creates/migrates `DATABASE_URL` and starts the usage writer.
-- The scenario selector is `x-mock-scenario` (header or JSON body field); the mock now serves both `/v1/chat/completions` and `/v1/messages`.
+- `cargo run -p server` starts the in-process mock when `GATEWAY_UPSTREAM_BASE_URL` is unset; data-plane requests now require a virtual key from `cargo run -p server -- key create --project NAME`.
+- The mock scenario selector is `x-mock-scenario` (header or JSON body field); the mock serves both `/v1/chat/completions` and `/v1/messages`.
+- Anthropic streaming and tool scenarios use `anthropic_stream_ok`, `anthropic_stream_cut`, `anthropic_stream_tool`, and `tool_use`.
 - The core crate directory is `crates/core/` but the package is `gateway-core`.
-- `Cargo.lock` is committed; use `--offline` when the network is unavailable.
+- `Cargo.lock` and `admin-ui/package-lock.json` are committed; use `--offline` when the network is unavailable.
+- The frontend lockfile pins `rolldown` to `1.2.16` and `jsdom` to `16.7.0` so `npm ci --offline` works from the local npm cache.
 - Migration filenames must use integer prefixes (`0001_init.sql`); `V0001__init.sql` is rejected by sqlx.
 
 ## Next step
 Paste MASTER_PROMPT.md with: Sprint = S4
-
-## S2 history
-- S2 committed exactly 16 pts (2.1–2.5): streaming trait, SSE parser, OpenAI streaming adapter, OpenAI SSE re-emission, disconnect cancellation, and mid-stream errors.
-- S2 test evidence: fmt/lint/tests/build/OpenAPI/SDK streaming smoke/secret scan all passed; auth/DB/CLI spilled to S3.

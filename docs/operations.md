@@ -2,13 +2,15 @@
 
 Day-two procedures for a self-hosted gateway: deploying, backing up, rotating the master key, upgrading, and diagnosing failures. Settings referenced here are defined in [config-reference.md](config-reference.md); retention in [data-model.md §5](data-model.md#5-retention); alerts in [observability.md](observability.md).
 
+> Current S1–S3 implementation: deployment, login, and master-key rotation procedures describe the target V1 surface. For local runs, issue data-plane keys with the CLI in §4a; the admin UI scaffold is mock-only.
+
 ## 1. Deploying
 
 1. Create a directory with `docker-compose.yml`, `config.toml`, and a `.env` containing `GATEWAY_MASTER_KEY`, `ADMIN_BOOTSTRAP_EMAIL`, and `ADMIN_BOOTSTRAP_PASSWORD`. Do not commit the `.env`.
 2. Start with `docker compose up -d`. The multi-stage image builds the Vite app and the Rust binary; one container serves the admin API and built UI on `:8081` and the data plane on `:8080` (S7 task 7.4).
 3. Terminate TLS at Caddy and proxy only `:8080` publicly. Keep `:8081` on localhost or a private network; `/metrics` lives there in 0.3.0+.
 4. Verify `GET /health` returns `{"status":"ok"}` and `GET /ready` returns `{"status":"ready"}`. A `503` on `/ready` means migrations did not complete or no provider is enabled.
-5. Log in at `https://<host>/` with the bootstrap credentials, change the password, add provider credentials, create aliases, and issue a project key.
+5. Log in at `https://<host>/` with the bootstrap credentials, change the password, add provider credentials, create aliases, and issue a project key. Until that admin flow lands, issue the key with §4a.
 6. Point a client at the gateway with only `base_url` and `api_key` changed (see [api-spec.md](api-spec.md)).
 
 Mount a named volume for the SQLite database. The container runs as a non-root user and the master key is supplied only through the environment.
@@ -51,6 +53,18 @@ Rehearse a full restore monthly and after any upgrade (S7 task 7.5).
 ## 4. Non-secret config changes
 
 Settings in [config-reference.md §1–2](config-reference.md#1-environment-variables) require a restart. Dynamic settings (providers, models, aliases, budgets, keys) are changed through the admin API and take effect for new requests via the atomic snapshot swap; in-flight requests keep the old view. Always confirm a change with the admin audit log and a test completion.
+
+### 4a. Issuing data-plane keys (current CLI)
+
+The shipped CLI manages projects and keys in SQLite. The full secret is printed only by `key create`; store it in the client's secret manager because `key list` shows only the prefix and status.
+
+```bash
+cargo run -p server -- key create --project NAME
+cargo run -p server -- key list --project NAME
+cargo run -p server -- key revoke --project NAME --key-id ID
+```
+
+Send the secret as `Authorization: Bearer <secret>` to `/v1/*`. `/health` and `/ready` remain unauthenticated.
 
 ## 5. Rotating the master key
 
