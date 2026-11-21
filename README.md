@@ -36,7 +36,7 @@ Self-hosted, OpenAI-compatible LLM gateway written in Rust, with a React admin a
 | Config | TOML + environment overrides |
 | Data plane | `POST /v1/chat/completions`, streaming SSE, OpenAI-compatible errors |
 | Admin API | `/admin/v1`, OpenAPI via `utoipa`, session cookie auth |
-| Admin UI | Vite + React + TypeScript, TanStack Router/Query, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts, TanStack Table |
+| Admin UI | Vite + React + TypeScript scaffold with local mock data; S6 adds TanStack Router/Query, shadcn/ui + Tailwind, React Hook Form + Zod, Recharts, and TanStack Table |
 | Tests | `cargo test`, Vitest + React Testing Library, Playwright |
 | Packaging | Multi-stage Docker image, Caddy for TLS |
 
@@ -83,19 +83,27 @@ cargo test
 cargo run -p server
 ```
 
-With no `GATEWAY_UPSTREAM_BASE_URL` set, the server starts an in-process mock provider and the data plane accepts normal and streaming Chat Completions requests:
+With no `GATEWAY_UPSTREAM_BASE_URL` set, the server starts an in-process mock provider. Issue a virtual key first; the secret is shown once:
+
+```bash
+cargo run -p server -- key create --project demo
+```
+
+Then call the data plane with that key:
 
 ```bash
 curl http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer gw-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"fast","messages":[{"role":"user","content":"Hello"}]}'
 
 curl -N http://localhost:8080/v1/chat/completions \
+  -H "Authorization: Bearer gw-..." \
   -H "Content-Type: application/json" \
   -d '{"model":"fast","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
 
-Point at a real OpenAI-compatible upstream with `GATEWAY_UPSTREAM_BASE_URL` and `GATEWAY_UPSTREAM_API_KEY`. With `GATEWAY_ANTHROPIC_API_KEY` set, model names beginning with `claude` use Anthropic non-streaming chat; Anthropic streaming returns `400 unsupported_field` in S3. Usage rows are written to `DATABASE_URL` (default `sqlite://./gateway.db`) in batches. There is no virtual-key auth yet (deferred again), so do not expose the listener publicly. `GET /health` returns `{"status":"ok"}` and every response carries `X-Request-Id`. Streaming responses are OpenAI-compatible SSE chunks ending in `[DONE]`; client disconnects cancel the upstream request.
+Point at a real OpenAI-compatible upstream with `GATEWAY_UPSTREAM_BASE_URL` and `GATEWAY_UPSTREAM_API_KEY`. With `GATEWAY_ANTHROPIC_API_KEY` set, model names beginning with `claude` use Anthropic; streaming and tool calls are translated to the OpenAI contract. Usage rows are written to `DATABASE_URL` (default `sqlite://./gateway.db`) in batches and flushed on SIGTERM. Data-plane requests require a virtual key; `GET /health` and `GET /ready` are public. Every response carries `X-Request-Id`. Streaming responses are OpenAI-compatible SSE chunks ending in `[DONE]`; client disconnects cancel the upstream request.
 
 ## Development (target)
 
@@ -112,7 +120,7 @@ cargo test
 cargo run -p server
 ```
 
-The data plane listens on `:8080` and the admin API/UI on `:8081`. For UI development, run `npm install && npm run dev` in `admin-ui/` with the dev proxy to `:8081`; the built app is served from the admin listener in production.
+The data plane listens on `:8080` and the admin API/UI on `:8081`. The current `admin-ui/` scaffold runs entirely on local mock data with `npm install && npm run dev`; S6 adds the dev proxy to `:8081`, and the built app is served from the admin listener in production.
 
 Once a key is issued, a client only changes `base_url` and `api_key`:
 

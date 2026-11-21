@@ -48,10 +48,12 @@ All notable changes to this project are documented here. The format follows [Kee
 ### Added
 
 - Tool-call mapping between OpenAI and Anthropic formats: tool definitions, assistant calls, tool results, and streamed argument fragments.
+- Vite + React + TypeScript admin UI scaffold with local mock data, accessible layout, dashboard/projects/keys pages, and Vitest coverage.
 
 ### Changed
 
 - Provider compatibility now marks Anthropic streaming and tool calling as supported.
+- Admin UI documentation now distinguishes the mock-only MVP scaffold from the planned S6 generated-client stack.
 
 ## Planned releases
 

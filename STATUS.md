@@ -13,7 +13,7 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 |----|------|-----|-------|----------|
 | 1.4 | CI: fmt, clippy, test on push | 2 | planned | workflow file; local reproduction of every CI step |
 | 1.9 | Full upstream error matrix | 2 | planned | provider error tests cover 400/401/403/408/413/429/5xx/network/timeout/stream |
-| 1.10 | Vite + React + TS admin UI scaffold | 3 | planned | dev server runs; typecheck/lint/unit tests pass; mock API only |
+| 1.10 | Vite + React + TS admin UI scaffold | 3 | done | dev server smoke, typecheck, lint, unit tests, build, and mock-only API pass |
 | 2.6 | SQLite + sqlx setup, migrations: `projects`, `api_keys` | 3 | planned | migration test asserts both tables, WAL-enabled connection, indexes |
 | 2.7 | Key generation and hashing (`gw-<random>`, SHA-256, display prefix) | 2 | planned | secret shown once; DB stores hash/prefix only |
 | 2.8 | Auth middleware attaching `AuthContext` | 3 | planned | missing/invalid/revoked/expired keys return documented 401 body |
@@ -81,7 +81,7 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 | Lint | `cargo clippy --offline --all-targets -- -D warnings` | pending |
 | Rust tests | `cargo test --offline` | pending |
 | Build | `cargo build --offline` | pending |
-| Frontend | `npm run typecheck && npm run lint && npm test` in `admin-ui` | pending |
+| Frontend | `npm run typecheck && npm run lint && npm test` in `admin-ui` | pass — 3 tests; build and dev-server smoke also pass |
 | OpenAPI drift | `git diff --exit-code -- docs/openapi.json admin-ui/src/api/schema.d.ts` | pending |
 | Migration | fresh `sqlx migrate run` + schema/pragmas check | pending |
 | E2E | `npm run e2e` in `admin-ui` | pending |
@@ -92,7 +92,7 @@ This is a backlog-clearing pass, not a new numbered sprint and not a version che
 - All deferred S1–S3 work is in scope by explicit user choice; no deferred item from this set is cut.
 - Work is done directly on `main`; no branch or version roll.
 - Key hashing (2.7) lands now after two documented deferrals; it remains a Never-cut requirement.
-- The UI scaffold uses a local mock API layer and local UI primitives; the generated OpenAPI client and generated shadcn components remain S6 work.
+- The UI scaffold uses `react-router-dom`, a local mock API layer, and local CSS primitives; TanStack Router/Query, the generated OpenAPI client, and generated shadcn components remain S6 work.
 - No control-plane change: OpenAPI and generated TypeScript client stay unchanged.
 - SIGTERM draining uses the existing axum graceful shutdown plus explicit usage-channel closure and writer flush.
 
