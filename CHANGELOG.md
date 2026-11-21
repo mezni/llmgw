@@ -10,6 +10,8 @@ All notable changes to this project are documented here. The format follows [Kee
 - Axum data plane with `GET /health`, JSON tracing logs, request IDs on responses and log lines, and configurable TOML/environment settings.
 - Normalized chat types with serde fixtures, an OpenAI-compatible adapter, and an in-process mock provider with `ok`, `delay`, `429`, and `500` scenarios.
 - `POST /v1/chat/completions` with OpenAI-shaped errors and an end-to-end smoke test using the official Python SDK.
+- OpenAI-compatible SSE streaming for chat completions: normalized chunks, fragmented-frame parsing, `[DONE]` terminator, final error events, and upstream cancellation on client disconnect.
+- Mock streaming scenarios (`stream_ok`, `stream_cut`, `stream_malformed`, `client_cancel`) and OpenAI stream-chunk fixtures.
 - Product document: goals, features, scope, users, and roadmap.
 - Architecture document: crates, request lifecycle, usage logging, data model, error model, security, testing, and deployment.
 - Data-plane API specification: endpoints, supported fields, pass-through rules, SSE format, headers, and error contract.
@@ -22,6 +24,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Changed
 
+- `stream: true` is now served as SSE instead of being rejected; virtual-key auth remains deferred to S3.
+- README status and development examples now cover streaming.
 - Aligned audit logging to V1 and key rotation to V2.
 - Made the OpenAPI spec and generated client a hard dependency for the admin UI sprint.
 - Moved spend accounting off the droppable usage-log path so budget enforcement stays correct under load.
