@@ -107,4 +107,4 @@ Committed scope: 18 pts (1.1, 1.2, 1.3, 1.5, 1.6, 1.7, 1.8). The sprint table li
 ## Sprint history
 | Sprint | Version | State | Commit / tag | Notes |
 |--------|---------|-------|--------------|-------|
-| S1 | MVP | complete | pending | Foundations: data plane vertical slice |
+| S1 | MVP | complete | 0d38952 | Foundations: data plane vertical slice |
